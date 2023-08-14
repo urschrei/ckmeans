@@ -1,3 +1,9 @@
+//! Ckmeans clustering is an improvement on heuristic-based clustering
+//! approaches like Jenks. The algorithm was developed in
+//! [Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf)
+//! as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach
+//! to the problem of clustering numeric data into groups with the least
+//! within-group sum-of-squared-deviations.
 use std::error::Error;
 
 /// return a sorted **copy** of the input
@@ -143,13 +149,6 @@ fn fill_matrices(
     });
 }
 
-/// Ckmeans clustering is an improvement on heuristic-based clustering
-/// approaches like Jenks. The algorithm was developed in
-/// [Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf)
-/// as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach
-/// to the problem of clustering numeric data into groups with the least
-/// within-group sum-of-squared-deviations.
-///
 /// Minimizing the difference within groups - what Wang & Song refer to as
 /// `withinss`, or within sum-of-squares, means that groups are optimally
 /// homogenous within and the data is split into representative groups.
@@ -169,11 +168,11 @@ fn fill_matrices(
 /// # References
 /// 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
 /// 2. <https://observablehq.com/@visionscarto/natural-breaks>
-pub fn ckmeans(data: &[i32], nclusters: usize) -> Result<Vec<Vec<i32>>, Box<dyn Error>> {
+pub fn ckmeans(data: &[i32], nclusters: i8) -> Result<Vec<Vec<i32>>, Box<dyn Error>> {
     if nclusters == 0 {
         return Err("Can't generate 0 classes. Try a positive number.".into());
     }
-    if nclusters > data.len() {
+    if usize::try_from(nclusters).expect("Couldn't convert i8 to usize") > data.len() {
         return Err("Can't generate more classes than data values".into());
     }
     let nvalues = data.len();
@@ -185,7 +184,8 @@ pub fn ckmeans(data: &[i32], nclusters: usize) -> Result<Vec<Vec<i32>>, Box<dyn 
     if unique_count == 1 {
         return Ok(vec![sorted]);
     }
-    let nclusters = unique_count.min(nclusters);
+    let nclusters =
+        unique_count.min(usize::try_from(nclusters).expect("Couldn't convert i8 to usize"));
 
     // named 'S' originally
     let mut matrix = make_matrix(nclusters, nvalues);
