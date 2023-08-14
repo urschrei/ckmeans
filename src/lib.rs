@@ -170,8 +170,8 @@ fn fill_matrices(
 /// 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
 /// 2. <https://observablehq.com/@visionscarto/natural-breaks>
 pub fn ckmeans(data: &[i32], nclusters: usize) -> Result<Vec<Vec<i32>>, Box<dyn Error>> {
-    if nclusters <= 0 {
-        return Err("Can't generate 0 or fewer classes".into());
+    if nclusters == 0 {
+        return Err("Can't generate 0 classes. Try a positive number.".into());
     }
     if nclusters > data.len() {
         return Err("Can't generate more classes than data values".into());
