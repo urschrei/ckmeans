@@ -23,10 +23,15 @@ fn make_matrix(columns: usize, rows: usize) -> Vec<Vec<i32>> {
 
 fn ssq(j: usize, i: usize, sumx: &[i32], sumxsq: &[i32]) -> i32 {
     let sji = if j > 0 {
-        let muji = (sumx[i] - sumx[j - 1]) / i32::try_from(i - j + 1).unwrap();
-        sumxsq[i] - sumxsq[j - 1] - i32::try_from(i - j + 1).unwrap() * muji * muji
+        let muji = (sumx[i] - sumx[j - 1])
+            / i32::try_from(i - j + 1).expect("Couldn't convert from usize to i32");
+        sumxsq[i]
+            - sumxsq[j - 1]
+            - i32::try_from(i - j + 1).expect("Couldn't convert from usize to i32") * muji.pow(2)
     } else {
-        sumxsq[i] - (sumx[i] * sumx[i]) / i32::try_from(i + 1).unwrap()
+        sumxsq[i]
+            - (sumx[i] * sumx[i])
+                / i32::try_from(i + 1).expect("Couldn't convert from usize to i32")
     };
     if sji < 0 {
         0
@@ -50,15 +55,24 @@ fn fill_matrix_column(
     // Start at midpoint between imin and imax
     let i = imin + (imax - imin) / 2;
     matrix[column][i] = matrix[column - 1][i - 1];
-    backtrack_matrix[column][i] = i32::try_from(i).unwrap();
+    backtrack_matrix[column][i] = i32::try_from(i).expect("Couldn't convert from usize to i32");
     let mut jlow = column;
     if imin > column {
-        jlow = (jlow).max(usize::try_from(backtrack_matrix[column][imin - 1]).unwrap());
+        jlow = (jlow).max(
+            usize::try_from(backtrack_matrix[column][imin - 1])
+                .expect("Couldn't convert from i32 to usize"),
+        );
     }
-    jlow = (jlow).max(usize::try_from(backtrack_matrix[column - 1][i]).unwrap());
+    jlow = (jlow).max(
+        usize::try_from(backtrack_matrix[column - 1][i])
+            .expect("Couldn't convert from i32 to usize"),
+    );
     let mut jhigh = i - 1; // the upper end for j
     if imax < matrix[0].len() - 1 {
-        jhigh = jhigh.min(usize::try_from(backtrack_matrix[column][imax + 1]).unwrap());
+        jhigh = jhigh.min(
+            usize::try_from(backtrack_matrix[column][imax + 1])
+                .expect("Couldn't convert from i32 to usize"),
+        );
     }
     for j in (jlow..jhigh + 1).rev() {
         let sji = ssq(j, i, sumx, sumxsq);
@@ -71,14 +85,16 @@ fn fill_matrix_column(
         if ssqjlow < matrix[column][i] {
             // shrink the lower bound
             matrix[column][i] = ssqjlow;
-            backtrack_matrix[column][i] = i32::try_from(jlow).unwrap();
+            backtrack_matrix[column][i] =
+                i32::try_from(jlow).expect("Couldn't convert from usize to i32");
         }
         jlow += 1;
 
         let ssqj = sji + matrix[column - 1][j - 1];
         if ssqj < matrix[column][i] {
             matrix[column][i] = ssqj;
-            backtrack_matrix[column][i] = i32::try_from(j).unwrap();
+            backtrack_matrix[column][i] =
+                i32::try_from(j).expect("Couldn't convert from usize to i32");
         }
     }
     fill_matrix_column(imin, i - 1, column, matrix, backtrack_matrix, sumx, sumxsq);
@@ -196,7 +212,8 @@ pub fn ckmeans(data: &[i32], nclusters: usize) -> Result<Vec<Vec<i32>>, Box<dyn 
         .rev()
         .enumerate()
         .for_each(|(_, cluster)| {
-            let cluster_left = usize::try_from(backtrack_matrix[cluster][cluster_right]).unwrap();
+            let cluster_left = usize::try_from(backtrack_matrix[cluster][cluster_right])
+                .expect("Couldn't convert from i32 to usize");
 
             // fill the cluster from the sorted input by taking a slice of the
             // array. the backtrack matrix makes this easy: it stores the
