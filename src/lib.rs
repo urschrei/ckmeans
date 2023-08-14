@@ -1,3 +1,5 @@
+use std::error::Error;
+
 /// return a sorted **copy** of the input
 fn numeric_sort(arr: &[i32]) -> Vec<i32> {
     let mut xs = arr.to_vec();
@@ -151,10 +153,12 @@ fn fill_matrices(
 /// # References
 /// 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
 /// 2. <https://observablehq.com/@visionscarto/natural-breaks>
-pub fn ckmeans(data: &[i32], nclusters: usize) -> Vec<Vec<i32>> {
-    // unimplemented!()
+pub fn ckmeans(data: &[i32], nclusters: usize) -> Result<Vec<Vec<i32>>, Box<dyn Error>> {
+    if nclusters <= 0 {
+        return Err("Can't generate 0 or fewer classes".into());
+    }
     if nclusters > data.len() {
-        return vec![data.to_vec()];
+        return Err("Can't generate more classes than data values".into());
     }
     let nvalues = data.len();
     let mut sorted = numeric_sort(data);
@@ -163,7 +167,7 @@ pub fn ckmeans(data: &[i32], nclusters: usize) -> Vec<Vec<i32>> {
     // if all of the input values are identical, there's one cluster
     // with all of the input in it.
     if unique_count == 1 {
-        return vec![sorted];
+        return Ok(vec![sorted]);
     }
     let nclusters = unique_count.min(nclusters);
 
@@ -203,7 +207,7 @@ pub fn ckmeans(data: &[i32], nclusters: usize) -> Vec<Vec<i32>> {
             }
         });
     clusters.reverse();
-    clusters
+    Ok(clusters)
 }
 
 #[cfg(test)]
@@ -219,7 +223,7 @@ mod tests {
             vec![12, 13, 14, 15, 16],
             vec![78, 82],
         ];
-        let res = ckmeans(&i, 3);
+        let res = ckmeans(&i, 3).unwrap();
         assert_eq!(res, expected)
     }
 }
