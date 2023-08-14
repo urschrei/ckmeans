@@ -13,8 +13,8 @@ fn numeric_sort(arr: &[i32]) -> Vec<i32> {
     xs
 }
 
+/// Assumes sorted input (so be sure only to use on numeric_sort output!)
 fn unique_count_sorted(input: &mut [i32]) -> usize {
-    input.sort();
     if input.is_empty() {
         0
     } else {
