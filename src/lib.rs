@@ -42,7 +42,6 @@ fn fill_matrix_column(
     sumx: &[i32],
     sumxsq: &[i32],
 ) {
-    // unimplemented!()
     if imin > imax {
         return;
     }
@@ -52,17 +51,14 @@ fn fill_matrix_column(
     backtrack_matrix[column][i] = i32::try_from(i).unwrap();
     let mut jlow = column;
     if imin > column {
-        // TODO: arg to max() is also || 0 in the JS version
         jlow = (jlow).max(usize::try_from(backtrack_matrix[column][imin - 1]).unwrap());
-    } else {
-        jlow = (jlow).max(usize::try_from(backtrack_matrix[column - 1][i]).unwrap());
     }
+    jlow = (jlow).max(usize::try_from(backtrack_matrix[column - 1][i]).unwrap());
     let mut jhigh = i - 1; // the upper end for j
     if imax < matrix[0].len() - 1 {
-        // TODO: arg to min() is also || 0 in the JS version
         jhigh = jhigh.min(usize::try_from(backtrack_matrix[column][imax + 1]).unwrap());
     }
-    for j in (jhigh..jlow - 1).rev() {
+    for j in (jlow..jhigh + 1).rev() {
         let sji = ssq(j, i, sumx, sumxsq);
         if sji + matrix[column - 1][jlow - 1] >= matrix[column][i] {
             break;
@@ -87,18 +83,21 @@ fn fill_matrix_column(
     fill_matrix_column(i + 1, imax, column, matrix, backtrack_matrix, sumx, sumxsq);
 }
 
-fn fill_matrices(data: &[i32], matrix: &mut Vec<Vec<i32>>, backtrack_matrix: &mut Vec<Vec<i32>>) {
-    // unimplemented!()
-    let nvalues = matrix[0].len();
-    let mut sumx: Vec<i32> = Vec::with_capacity(nvalues);
-    let mut sumxsq: Vec<i32> = Vec::with_capacity(nvalues);
-
-    let shift = i32::try_from(data[nvalues / 2]).unwrap();
+fn fill_matrices(
+    data: &[i32],
+    matrix: &mut Vec<Vec<i32>>,
+    backtrack_matrix: &mut Vec<Vec<i32>>,
+    nclusters: usize,
+) {
+    let nvalues = data.len();
+    let mut sumx: Vec<i32> = vec![0; nvalues];
+    let mut sumxsq: Vec<i32> = vec![0; nvalues];
+    let shift = data[nvalues / 2];
     // Initialize first row in matrix & backtrack_matrix
-    (0..nvalues).enumerate().for_each(|(i, _)| {
+    (0..nvalues).enumerate().for_each(|(_, i)| {
         if i == 0 {
             sumx[0] = data[0] - shift;
-            sumxsq[0] = (data[0] - shift) * (data[0] - shift);
+            sumxsq[0] = (data[0] - shift).pow(2);
         } else {
             sumx[i] = sumx[i - 1] + data[i] - shift;
             sumxsq[i] = sumxsq[i - 1] + (data[i] - shift) * (data[i] - shift);
@@ -107,14 +106,13 @@ fn fill_matrices(data: &[i32], matrix: &mut Vec<Vec<i32>>, backtrack_matrix: &mu
         matrix[0][i] = ssq(0, i, &sumx, &sumxsq);
         backtrack_matrix[0][i] = 0;
     });
-    let mut imin = 0;
-    (1..matrix.len()).enumerate().for_each(|(k, _)| {
-        if k < matrix.len() - 1 {
-            imin = k;
+    (1..nclusters).enumerate().for_each(|(_, k)| {
+        let imin = if k < nclusters {
+            k.max(1)
         } else {
             // No need to compute matrix[k - 1][0] ... matrix[k - 1][n - 2]
-            imin = nvalues - 1;
-        }
+            nvalues - 1
+        };
         fill_matrix_column(
             imin,
             nvalues - 1,
@@ -152,7 +150,7 @@ fn fill_matrices(data: &[i32], matrix: &mut Vec<Vec<i32>>, backtrack_matrix: &mu
 ///
 /// # References
 /// 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
-/// 2. https://observablehq.com/@visionscarto/natural-breaks
+/// 2. <https://observablehq.com/@visionscarto/natural-breaks>
 pub fn ckmeans(data: &[i32], nclusters: usize) -> Vec<Vec<i32>> {
     // unimplemented!()
     if nclusters > data.len() {
@@ -178,7 +176,7 @@ pub fn ckmeans(data: &[i32], nclusters: usize) -> Vec<Vec<i32>> {
     // within-cluster sum of squares. It's similar to linear regression
     // in this way, and this calculation incrementally computes the
     // sum of squares that are later read.
-    fill_matrices(&sorted, &mut matrix, &mut backtrack_matrix);
+    fill_matrices(&sorted, &mut matrix, &mut backtrack_matrix, nclusters);
 
     // The real work of Ckmeans clustering happens in the matrix generation:
     // the generated matrices encode all possible clustering combinations, and
@@ -190,21 +188,21 @@ pub fn ckmeans(data: &[i32], nclusters: usize) -> Vec<Vec<i32>> {
     // Backtrack the clusters from the dynamic programming matrix. This
     // starts at the bottom-right corner of the matrix (if the top-left is 0, 0),
     // and moves the cluster target with the loop.
-    (0..backtrack_matrix.len() - 1)
+    (0..backtrack_matrix.len())
         .rev()
         .enumerate()
-        .for_each(|(cluster, _)| {
+        .for_each(|(_, cluster)| {
             let cluster_left = usize::try_from(backtrack_matrix[cluster][cluster_right]).unwrap();
-            // fill the cluster from the sorted input by taking a slice of the
-            // array. the backtrack matrix makes this easy - it stores the
-            // indexes where the cluster should start and end.
 
-            // TODO we want to use cluster_left as the starting offset
-            clusters[cluster] = sorted[cluster_left..].to_vec();
+            // fill the cluster from the sorted input by taking a slice of the
+            // array. the backtrack matrix makes this easy: it stores the
+            // indexes where the cluster should start and end.
+            clusters.push(sorted[cluster_left..cluster_right + 1].to_vec());
             if cluster > 0 {
                 cluster_right = cluster_left - 1;
             }
         });
+    clusters.reverse();
     clusters
 }
 
@@ -216,7 +214,12 @@ mod tests {
         let i = vec![
             1, 12, 13, 14, 15, 16, 2, 2, 3, 5, 7, 1, 2, 5, 7, 1, 5, 82, 1, 1, 1, 78,
         ];
+        let expected = vec![
+            vec![1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 5, 5, 5, 7, 7],
+            vec![12, 13, 14, 15, 16],
+            vec![78, 82],
+        ];
         let res = ckmeans(&i, 3);
-        println!("Res: {:?}", &res);
+        assert_eq!(res, expected)
     }
 }
