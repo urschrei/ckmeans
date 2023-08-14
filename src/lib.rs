@@ -9,7 +9,7 @@ use std::error::Error;
 /// return a sorted **copy** of the input
 fn numeric_sort(arr: &[i32]) -> Vec<i32> {
     let mut xs = arr.to_vec();
-    xs.sort();
+    xs.sort_unstable();
     xs
 }
 
