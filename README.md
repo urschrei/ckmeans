@@ -25,11 +25,15 @@ provided.
 # Implementation
 This is a port (including documentation) of David Schnurr's package <https://github.com/schnerd/ckmeans>, incorporating some improvements from Bill Mill's Python + Numpy implementation at <https://github.com/llimllib/ckmeans>.
 
-# Perf
+# Performance
 On an M2 Pro, the algorithm will classify 100k i32 values between 0 and 250 into 7 classes in around 15 ms.
 
 ## Possible Improvements
+### Perf
 The "matrices" are nested vectors and thus don't have optimal memory layout. In addition, we're not trying to leverage any of the fast linear algebra libraries that might be available if we used e.g. [`ndarray`](https://crates.io/crates/ndarray).
+
+### Tests
+Perhaps some property-based tests
 
 # References
 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
