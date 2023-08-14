@@ -202,7 +202,7 @@ pub fn ckmeans(data: &[i32], nclusters: i8) -> Result<Vec<Vec<i32>>, Box<dyn Err
     // the generated matrices encode all possible clustering combinations, and
     // once they're generated we can solve for the best clustering groups
     // very quickly.
-    let mut clusters: Vec<Vec<i32>> = vec![];
+    let mut clusters: Vec<Vec<i32>> = Vec::with_capacity(nclusters);
     let mut cluster_right = backtrack_matrix[0].len() - 1;
 
     // Backtrack the clusters from the dynamic programming matrix. This
