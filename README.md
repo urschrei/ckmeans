@@ -1,32 +1,17 @@
 # Ckmeans
-Ckmeans clustering is an improvement on heuristic-based clustering
-approaches like Jenks. The algorithm was developed by
-[Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf) (2011)
-as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach
-to the problem of clustering numeric data into groups with the least
-within-group sum-of-squared-deviations.
+Ckmeans clustering is an improvement on heuristic-based clustering approaches like Jenks. The algorithm was developed by [Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf) (2011) as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach to the problem of clustering numeric data into groups with the least within-group sum-of-squared-deviations.
 
-Minimizing the difference within groups – what Wang & Song refer to as
-`withinss`, or within sum-of-squares – means that groups are optimally
-homogenous within and the data is split into representative groups.
-This is very useful for visualization, where you may want to represent
-a continuous variable in discrete colour or style groups. This function
-can provide groups that emphasize differences between data.
+Minimizing the difference within groups – what Wang & Song refer to as `withinss`, or within sum-of-squares – means that groups are optimally homogenous within and the data is split into representative groups. This is very useful for visualization, where you may want to represent a continuous variable in discrete colour or style groups. This function can provide groups that emphasize differences between data.
 
-Being a dynamic approach, this algorithm is based on two matrices that
-store incrementally-computed values for squared deviations and backtracking
-indexes.
+Being a dynamic approach, this algorithm is based on two matrices that store incrementally-computed values for squared deviations and backtracking indexes.
 
-Unlike the [original implementation](https://cran.r-project.org/web/packages/Ckmeans.1d.dp/index.html),
-this implementation does not include any code to automatically determine
-the optimal number of clusters: this information needs to be explicitly
-provided.
+Unlike the [original implementation](https://cran.r-project.org/web/packages/Ckmeans.1d.dp/index.html), this implementation does not include any code to automatically determine the optimal number of clusters: this information needs to be explicitly provided.
 
 # Implementation
 This is a port (including documentation) of David Schnurr's package <https://github.com/schnerd/ckmeans>, incorporating some improvements from Bill Mill's Python + Numpy implementation at <https://github.com/llimllib/ckmeans>.
 
 # Performance
-On an M2 Pro, the algorithm will classify 100k i32 values between 0 and 250 into 7 classes in around 12 ms.
+On an M2 Pro, the algorithm will classify 110k uniformly-distributed i32 values between 0 and 250 into 7 classes in < 20 ms.
 
 ## Possible Improvements
 ### Perf
