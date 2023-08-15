@@ -4,7 +4,7 @@
 //! as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach
 //! to the problem of clustering numeric data into groups with the least
 //! within-group sum-of-squared-deviations.
-use std::error::Error;
+use std::{error::Error, num::TryFromIntError};
 
 /// return a sorted **copy** of the input
 fn numeric_sort(arr: &[i32]) -> Vec<i32> {
@@ -27,22 +27,17 @@ fn make_matrix(columns: usize, rows: usize) -> Vec<Vec<i32>> {
     matrix
 }
 
-fn ssq(j: usize, i: usize, sumx: &[i32], sumxsq: &[i32]) -> i32 {
+fn ssq(j: usize, i: usize, sumx: &[i32], sumxsq: &[i32]) -> Result<i32, TryFromIntError> {
     let sji = if j > 0 {
-        let muji = (sumx[i] - sumx[j - 1])
-            / i32::try_from(i - j + 1).expect("Couldn't convert from usize to i32");
-        sumxsq[i]
-            - sumxsq[j - 1]
-            - i32::try_from(i - j + 1).expect("Couldn't convert from usize to i32") * muji.pow(2)
+        let muji = (sumx[i] - sumx[j - 1]) / i32::try_from(i - j + 1)?;
+        sumxsq[i] - sumxsq[j - 1] - i32::try_from(i - j + 1)? * muji.pow(2)
     } else {
-        sumxsq[i]
-            - (sumx[i] * sumx[i])
-                / i32::try_from(i + 1).expect("Couldn't convert from usize to i32")
+        sumxsq[i] - (sumx[i] * sumx[i]) / i32::try_from(i + 1)?
     };
     if sji < 0 {
-        0
+        Ok(0)
     } else {
-        sji
+        Ok(sji)
     }
 }
 
@@ -54,57 +49,47 @@ fn fill_matrix_column(
     backtrack_matrix: &mut Vec<Vec<i32>>,
     sumx: &[i32],
     sumxsq: &[i32],
-) {
+) -> Result<(), TryFromIntError> {
     if imin > imax {
-        return;
+        return Ok(());
     }
     // Start at midpoint between imin and imax
     let i = imin + (imax - imin) / 2;
     matrix[column][i] = matrix[column - 1][i - 1];
-    backtrack_matrix[column][i] = i32::try_from(i).expect("Couldn't convert from usize to i32");
+    backtrack_matrix[column][i] = i32::try_from(i)?;
     let mut jlow = column;
     if imin > column {
-        jlow = (jlow).max(
-            usize::try_from(backtrack_matrix[column][imin - 1])
-                .expect("Couldn't convert from i32 to usize"),
-        );
+        jlow = (jlow).max(usize::try_from(backtrack_matrix[column][imin - 1])?);
     }
-    jlow = (jlow).max(
-        usize::try_from(backtrack_matrix[column - 1][i])
-            .expect("Couldn't convert from i32 to usize"),
-    );
+    jlow = (jlow).max(usize::try_from(backtrack_matrix[column - 1][i])?);
     let mut jhigh = i - 1; // the upper end for j
     if imax < matrix[0].len() - 1 {
-        jhigh = jhigh.min(
-            usize::try_from(backtrack_matrix[column][imax + 1])
-                .expect("Couldn't convert from i32 to usize"),
-        );
+        jhigh = jhigh.min(usize::try_from(backtrack_matrix[column][imax + 1])?);
     }
     for j in (jlow..jhigh + 1).rev() {
-        let sji = ssq(j, i, sumx, sumxsq);
+        let sji = ssq(j, i, sumx, sumxsq)?;
         if sji + matrix[column - 1][jlow - 1] >= matrix[column][i] {
             break;
         }
-        let sjlowi = ssq(jlow, i, sumx, sumxsq);
+        let sjlowi = ssq(jlow, i, sumx, sumxsq)?;
 
         let ssqjlow = sjlowi + matrix[column - 1][jlow - 1];
         if ssqjlow < matrix[column][i] {
             // shrink the lower bound
             matrix[column][i] = ssqjlow;
-            backtrack_matrix[column][i] =
-                i32::try_from(jlow).expect("Couldn't convert from usize to i32");
+            backtrack_matrix[column][i] = i32::try_from(jlow)?;
         }
         jlow += 1;
 
         let ssqj = sji + matrix[column - 1][j - 1];
         if ssqj < matrix[column][i] {
             matrix[column][i] = ssqj;
-            backtrack_matrix[column][i] =
-                i32::try_from(j).expect("Couldn't convert from usize to i32");
+            backtrack_matrix[column][i] = i32::try_from(j)?;
         }
     }
-    fill_matrix_column(imin, i - 1, column, matrix, backtrack_matrix, sumx, sumxsq);
-    fill_matrix_column(i + 1, imax, column, matrix, backtrack_matrix, sumx, sumxsq);
+    fill_matrix_column(imin, i - 1, column, matrix, backtrack_matrix, sumx, sumxsq)?;
+    fill_matrix_column(i + 1, imax, column, matrix, backtrack_matrix, sumx, sumxsq)?;
+    Ok(())
 }
 
 fn fill_matrices(
@@ -112,13 +97,14 @@ fn fill_matrices(
     matrix: &mut Vec<Vec<i32>>,
     backtrack_matrix: &mut Vec<Vec<i32>>,
     nclusters: usize,
-) {
+) -> Result<(), TryFromIntError> {
     let nvalues = data.len();
     let mut sumx: Vec<i32> = vec![0; nvalues];
     let mut sumxsq: Vec<i32> = vec![0; nvalues];
     let shift = data[nvalues / 2];
     // Initialize first row in matrix & backtrack_matrix
-    (0..nvalues).enumerate().for_each(|(_, i)| {
+    for i in 0..nvalues {
+        // (0..nvalues).enumerate().for_each(|(_, i)| {
         if i == 0 {
             sumx[0] = data[0] - shift;
             sumxsq[0] = (data[0] - shift).pow(2);
@@ -127,10 +113,10 @@ fn fill_matrices(
             sumxsq[i] = sumxsq[i - 1] + (data[i] - shift) * (data[i] - shift);
         }
         // Initialize for k = 0
-        matrix[0][i] = ssq(0, i, &sumx, &sumxsq);
+        matrix[0][i] = ssq(0, i, &sumx, &sumxsq)?;
         backtrack_matrix[0][i] = 0;
-    });
-    (1..nclusters).enumerate().for_each(|(_, k)| {
+    }
+    for k in 1..nclusters {
         let imin = if k < nclusters {
             k.max(1)
         } else {
@@ -145,8 +131,9 @@ fn fill_matrices(
             backtrack_matrix,
             &sumx,
             &sumxsq,
-        );
-    });
+        )?;
+    }
+    Ok(())
 }
 
 /// Minimizing the difference within groups - what Wang & Song refer to as
@@ -184,8 +171,7 @@ pub fn ckmeans(data: &[i32], nclusters: i8) -> Result<Vec<Vec<i32>>, Box<dyn Err
     if unique_count == 1 {
         return Ok(vec![sorted]);
     }
-    let nclusters =
-        unique_count.min(usize::try_from(nclusters).expect("Couldn't convert i8 to usize"));
+    let nclusters = unique_count.min(usize::try_from(nclusters)?);
 
     // named 'S' originally
     let mut matrix = make_matrix(nclusters, nvalues);
@@ -196,7 +182,7 @@ pub fn ckmeans(data: &[i32], nclusters: i8) -> Result<Vec<Vec<i32>>, Box<dyn Err
     // within-cluster sum of squares. It's similar to linear regression
     // in this way, and this calculation incrementally computes the
     // sum of squares that are later read.
-    fill_matrices(&sorted, &mut matrix, &mut backtrack_matrix, nclusters);
+    fill_matrices(&sorted, &mut matrix, &mut backtrack_matrix, nclusters)?;
 
     // The real work of Ckmeans clustering happens in the matrix generation:
     // the generated matrices encode all possible clustering combinations, and
@@ -208,21 +194,17 @@ pub fn ckmeans(data: &[i32], nclusters: i8) -> Result<Vec<Vec<i32>>, Box<dyn Err
     // Backtrack the clusters from the dynamic programming matrix. This
     // starts at the bottom-right corner of the matrix (if the top-left is 0, 0),
     // and moves the cluster target with the loop.
-    (0..backtrack_matrix.len())
-        .rev()
-        .enumerate()
-        .for_each(|(_, cluster)| {
-            let cluster_left = usize::try_from(backtrack_matrix[cluster][cluster_right])
-                .expect("Couldn't convert from i32 to usize");
+    for cluster in (0..backtrack_matrix.len()).rev() {
+        let cluster_left = usize::try_from(backtrack_matrix[cluster][cluster_right])?;
 
-            // fill the cluster from the sorted input by taking a slice of the
-            // array. the backtrack matrix makes this easy: it stores the
-            // indexes where the cluster should start and end.
-            clusters.push(sorted[cluster_left..cluster_right + 1].to_vec());
-            if cluster > 0 {
-                cluster_right = cluster_left - 1;
-            }
-        });
+        // fill the cluster from the sorted input by taking a slice of the
+        // array. the backtrack matrix makes this easy: it stores the
+        // indexes where the cluster should start and end.
+        clusters.push(sorted[cluster_left..cluster_right + 1].to_vec());
+        if cluster > 0 {
+            cluster_right = cluster_left - 1;
+        }
+    }
     clusters.reverse();
     Ok(clusters)
 }
