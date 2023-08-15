@@ -1,6 +1,6 @@
 # Ckmeans
 Ckmeans clustering is an improvement on heuristic-based clustering
-approaches like Jenks. The algorithm was developed in
+approaches like Jenks. The algorithm was developed by
 [Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf) (2011)
 as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach
 to the problem of clustering numeric data into groups with the least
