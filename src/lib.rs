@@ -140,7 +140,7 @@ fn fill_matrices(
 /// `withinss`, or within sum-of-squares, means that groups are optimally
 /// homogenous within and the data is split into representative groups.
 /// This is very useful for visualization, where you may want to represent
-/// a continuous variable in discrete color or style groups. This function
+/// a continuous variable in discrete colour or style groups. This function
 /// can provide groups that emphasize differences between data.
 ///
 /// Being a dynamic approach, this algorithm is based on two matrices that
