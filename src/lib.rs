@@ -155,7 +155,7 @@ where
     Ok(())
 }
 
-/// Minimizing the difference within groups - what Wang & Song refer to as
+/// Minimizing the difference within groups – what Wang & Song refer to as
 /// `withinss`, or within sum-of-squares, means that groups are optimally
 /// homogenous within and the data is split into representative groups.
 /// This is very useful for visualization, where you may want to represent
