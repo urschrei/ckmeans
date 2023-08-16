@@ -5,13 +5,15 @@
 //! to the problem of clustering numeric data into groups with the least
 //! within-group sum-of-squared-deviations.
 use num_traits::cast::FromPrimitive;
+use num_traits::Float;
 use num_traits::{Num, NumCast};
 use std::error::Error;
 use std::fmt::Debug;
+use std::ops::Sub;
 
 /// A trait that encompasses most common numeric types (integer **and** floating point)
-pub trait CkNum: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug {}
-impl<T: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug> CkNum for T {}
+pub trait CkNum: Num + Copy + Clone + NumCast + PartialOrd + FromPrimitive + Debug + Sub {}
+impl<T: Num + Copy + Clone + NumCast + PartialOrd + FromPrimitive + Debug + Sub> CkNum for T {}
 
 /// return a sorted **copy** of the input. Will blow up in the presence of NaN
 fn numeric_sort<T: CkNum>(arr: &[T]) -> Vec<T> {
@@ -230,6 +232,43 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: i8) -> Result<Vec<Vec<T>>, Box<d
     Ok(clusters)
 }
 
+/// The boundaries of the classes returned by [ckmeans] are "ugly" — in the sense that the values
+/// returned are the lower bound of each cluster, which can’t be used for labelling, since they
+/// might have many decimal places. To create a legend, the values should be rounded — but the
+/// rounding might be either too loose (and would result in spurious decimal places), or too strict,
+/// resulting in classes ranging “from x to x”. A better approach is to choose the roundest number that
+/// separates the lowest point from a class from the highest point
+/// in the _preceding_ class — thus giving just enough precision to distinguish the classes
+///
+/// # Original Implementation
+/// <https://observablehq.com/@visionscarto/natural-breaks#round>
+pub fn roundbreaks<T: Float + Debug + FromPrimitive>(
+    data: &[T],
+    nclusters: i8,
+) -> Result<Vec<T>, Box<dyn Error>> {
+    let ckm = ckmeans(data, nclusters)?;
+    ckm.windows(2)
+        .map(|pair| {
+            let p = T::from(10.0).ok_or("couldn't convert from f64")?.powf(
+                (T::one()
+                    - (*pair[1]
+                        .first()
+                        .ok_or("couldn't get first element of window section 2")?
+                        - *pair[0]
+                            .last()
+                            .ok_or("couldn't get last element of window section 1")?)
+                    .log10())
+                .floor(),
+            );
+            Ok((((pair[1][0] + *pair[0].last().unwrap())
+                / T::from(2.0).ok_or("couldn't convert from f64")?)
+                * p)
+                .floor()
+                / p)
+        })
+        .collect::<Result<Vec<T>, _>>()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,6 +300,16 @@ mod tests {
             vec![78., 82.],
         ];
         let res = ckmeans(&i, 3).unwrap();
+        assert_eq!(res, expected)
+    }
+    #[test]
+    fn test_roundbreaks() {
+        let i = vec![
+            1f64, 12., 13., 14., 15., 16., 2., 2., 3., 5., 7., 1., 2., 5., 7., 1., 5., 82., 1.,
+            1.3, 1.1, 78.,
+        ];
+        let expected = vec![9.0, 40.0];
+        let res = roundbreaks(&i, 3).unwrap();
         assert_eq!(res, expected)
     }
 }
