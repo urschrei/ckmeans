@@ -253,14 +253,19 @@ pub fn roundbreaks<T: Float + Debug + FromPrimitive>(
                 (T::one()
                     - (*pair[1]
                         .first()
-                        .ok_or("couldn't get first element of window section 2")?
+                        .ok_or("couldn't get first element of high window")?
                         - *pair[0]
                             .last()
-                            .ok_or("couldn't get last element of window section 1")?)
+                            .ok_or("couldn't get last element of low window")?)
                     .log10())
                 .floor(),
             );
-            Ok((((pair[1][0] + *pair[0].last().unwrap())
+            Ok((((*pair[1]
+                .first()
+                .ok_or("couldn't get first element of high window")?
+                + *pair[0]
+                    .last()
+                    .ok_or("couldn't get last element of low window")?)
                 / T::from(2.0).ok_or("couldn't convert from f64")?)
                 * p)
                 .floor()
