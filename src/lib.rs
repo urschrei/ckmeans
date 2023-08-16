@@ -9,11 +9,10 @@ use num_traits::Float;
 use num_traits::{Num, NumCast};
 use std::error::Error;
 use std::fmt::Debug;
-use std::ops::Sub;
 
 /// A trait that encompasses most common numeric types (integer **and** floating point)
-pub trait CkNum: Num + Copy + Clone + NumCast + PartialOrd + FromPrimitive + Debug + Sub {}
-impl<T: Num + Copy + Clone + NumCast + PartialOrd + FromPrimitive + Debug + Sub> CkNum for T {}
+pub trait CkNum: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug {}
+impl<T: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug> CkNum for T {}
 
 /// return a sorted **copy** of the input. Will blow up in the presence of NaN
 fn numeric_sort<T: CkNum>(arr: &[T]) -> Vec<T> {
@@ -238,7 +237,7 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: i8) -> Result<Vec<Vec<T>>, Box<d
 /// rounding might be either too loose (and would result in spurious decimal places), or too strict,
 /// resulting in classes ranging “from x to x”. A better approach is to choose the roundest number that
 /// separates the lowest point from a class from the highest point
-/// in the _preceding_ class — thus giving just enough precision to distinguish the classes
+/// in the _preceding_ class — thus giving just enough precision to distinguish the classes.
 ///
 /// # Original Implementation
 /// <https://observablehq.com/@visionscarto/natural-breaks#round>

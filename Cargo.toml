@@ -1,7 +1,7 @@
 [package]
 name = "ckmeans"
 description = "A Rust implementation of Wang and Song's Ckmeans clustering algorithm"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/urschrei/ckmeans"
