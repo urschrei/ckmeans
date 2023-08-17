@@ -4,6 +4,7 @@
 //! (2011) as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach
 //! to the problem of clustering numeric data into groups with the least
 //! within-group sum-of-squared-deviations.
+
 use num_traits::cast::FromPrimitive;
 use num_traits::Float;
 use num_traits::{Num, NumCast};

@@ -19,7 +19,6 @@ pub struct WrapperArray {
 /// Wrapper for a void pointer to a sequence of floats representing a single [ckmeans] result class, and the
 /// sequence length. Used for FFI.
 #[repr(C)]
-#[derive(Clone)]
 pub struct InternalArray {
     pub data: *const c_void,
     pub len: size_t,
@@ -36,7 +35,7 @@ pub struct ExternalArray {
 /// We don't need to take ownership of incoming data to be clustered: that happens in CkMeans
 impl From<ExternalArray> for &[f64] {
     fn from(arr: ExternalArray) -> Self {
-        unsafe { slice::from_raw_parts(arr.data as *mut f64, arr.len) }
+        unsafe { slice::from_raw_parts(arr.data.cast(), arr.len) }
     }
 }
 
@@ -47,7 +46,7 @@ impl From<Vec<f64>> for InternalArray {
         let blen = boxed.len();
         let rawp = Box::into_raw(boxed);
         InternalArray {
-            data: rawp as *const c_void,
+            data: rawp.cast(),
             len: blen as size_t,
         }
     }
@@ -59,7 +58,7 @@ impl From<Vec<f64>> for ExternalArray {
         let blen = boxed.len();
         let rawp = Box::into_raw(boxed);
         ExternalArray {
-            data: rawp as *const c_void,
+            data: rawp.cast(),
             len: blen as size_t,
         }
     }
@@ -72,7 +71,7 @@ impl From<Vec<Vec<f64>>> for WrapperArray {
         let blen = boxed.len();
         let rawp = Box::into_raw(boxed);
         WrapperArray {
-            data: rawp as *const c_void,
+            data: rawp.cast(),
             len: blen as size_t,
         }
     }
@@ -83,8 +82,9 @@ impl From<InternalArray> for Vec<f64> {
     fn from(arr: InternalArray) -> Self {
         // we originated this data, so pointer-to-slice -> box -> vec
         unsafe {
-            let p = ptr::slice_from_raw_parts_mut(arr.data as *mut f64, arr.len);
-            Box::from_raw(p).to_vec()
+            // let p: *mut [f64] = ptr::slice_from_raw_parts_mut(*arr.data.cast(), arr.len);
+            let p = ptr::slice_from_raw_parts_mut(arr.data as _, arr.len);
+            Box::from_raw(p).into_vec()
         }
     }
 }
@@ -93,8 +93,9 @@ impl From<InternalArray> for Vec<f64> {
 impl From<WrapperArray> for Vec<Vec<f64>> {
     fn from(arr: WrapperArray) -> Self {
         let arrays = unsafe {
-            let p = ptr::slice_from_raw_parts_mut(arr.data as *mut InternalArray, arr.len);
-            Box::from_raw(p).to_vec()
+            // let p = ptr::slice_from_raw_parts_mut(*arr.data.cast::<*mut InternalArray>(), arr.len);
+            let p: *mut [InternalArray] = ptr::slice_from_raw_parts_mut(arr.data as _, arr.len);
+            Box::from_raw(p).into_vec()
         };
         arrays.into_iter().map(|arr| arr.into()).collect()
     }
