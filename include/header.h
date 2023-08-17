@@ -35,7 +35,7 @@ typedef struct ExternalArray {
  * This function is unsafe because it accesses a raw pointer which could contain arbitrary data
  */
 struct WrapperArray ckmeans_ffi(struct ExternalArray data,
-                                signed char classes);
+                                unsigned char classes);
 
 /**
  * Drop data returned by [ckmeans_ffi].

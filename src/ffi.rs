@@ -1,6 +1,6 @@
 //! The FFI module for Ckmeans
 
-use libc::{c_double, c_schar, c_void, size_t};
+use libc::{c_double, c_uchar, c_void, size_t};
 use std::f64;
 use std::ptr;
 use std::slice;
@@ -108,7 +108,7 @@ impl From<WrapperArray> for Vec<Vec<f64>> {
 ///
 /// This function is unsafe because it accesses a raw pointer which could contain arbitrary data
 #[no_mangle]
-pub extern "C" fn ckmeans_ffi(data: ExternalArray, classes: c_schar) -> WrapperArray {
+pub extern "C" fn ckmeans_ffi(data: ExternalArray, classes: c_uchar) -> WrapperArray {
     ckmeans(data.into(), classes).unwrap().into()
 }
 

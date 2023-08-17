@@ -10,6 +10,9 @@ Being a dynamic approach, this algorithm is based on two matrices that store inc
 
 Unlike the [original implementation](https://cran.r-project.org/web/packages/Ckmeans.1d.dp/index.html), this implementation does not include any code to automatically determine the optimal number of clusters: this information needs to be explicitly provided. It **does** provide the `roundbreaks` method to aid labelling, however.
 
+# FFI
+A C-compatible FFI implementation is available, along with libraries for major platforms. See the [header file](include/header.h).
+
 # Implementation
 This is a port (including documentation) of David Schnurr's package <https://github.com/schnerd/ckmeans>, incorporating some improvements from Bill Mill's Python + Numpy implementation at <https://github.com/llimllib/ckmeans>.
 

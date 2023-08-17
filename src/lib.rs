@@ -185,11 +185,11 @@ where
 /// # References
 /// 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
 /// 2. <https://observablehq.com/@visionscarto/natural-breaks>
-pub fn ckmeans<T: CkNum>(data: &[T], nclusters: i8) -> Result<Vec<Vec<T>>, Box<dyn Error>> {
+pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Box<dyn Error>> {
     if nclusters == 0 {
         return Err("Can't generate 0 classes. Try a positive number.".into());
     }
-    if usize::try_from(nclusters).expect("Couldn't convert i8 to usize") > data.len() {
+    if usize::try_from(nclusters).expect("Couldn't convert u8 to usize") > data.len() {
         return Err("Can't generate more classes than data values".into());
     }
     let nvalues = data.len();
@@ -252,7 +252,7 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: i8) -> Result<Vec<Vec<T>>, Box<d
 /// <https://observablehq.com/@visionscarto/natural-breaks#round>
 pub fn roundbreaks<T: Float + Debug + FromPrimitive>(
     data: &[T],
-    nclusters: i8,
+    nclusters: u8,
 ) -> Result<Vec<T>, Box<dyn Error>> {
     let ckm = ckmeans(data, nclusters)?;
     ckm.windows(2)
