@@ -1,5 +1,5 @@
-//! Ckmeans clustering is an improvement on heuristic-based clustering
-//! approaches like Jenks. The algorithm was developed by
+//! Ckmeans clustering is an improvement on heuristic-based 1-dimensional clustering
+//! approaches such as Jenks. The algorithm was developed by
 //! [Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf)
 //! (2011) as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach
 //! to the problem of clustering numeric data into groups with the least
@@ -156,9 +156,9 @@ where
 }
 
 /// Minimizing the difference within groups – what Wang & Song refer to as
-/// `withinss`, or within sum-of-squares, means that groups are optimally
-/// homogenous within and the data is split into representative groups.
-/// This is very useful for visualization, where you may want to represent
+/// `withinss`, or within sum-of-squares, means that groups are **optimally
+/// homogenous** within and the data is split into representative groups.
+/// This is very useful for visualization, where one may wish to represent
 /// a continuous variable in discrete colour or style groups. This function
 /// can provide groups that emphasize differences between data.
 ///
@@ -200,7 +200,7 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: i8) -> Result<Vec<Vec<T>>, Box<d
     // named 'J' originally
     let mut backtrack_matrix = make_matrix(nclusters, nvalues);
 
-    // This is a dynamic programming way to solve the problem of minimizing
+    // This is a dynamic programming approach to solving the problem of minimizing
     // within-cluster sum of squares. It's similar to linear regression
     // in this way, and this calculation incrementally computes the
     // sum of squares that are later read.
@@ -232,7 +232,7 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: i8) -> Result<Vec<Vec<T>>, Box<d
     Ok(clusters)
 }
 
-/// The boundaries of the classes returned by [ckmeans] are "ugly" — in the sense that the values
+/// The boundaries of the classes returned by [ckmeans] are "ugly" in the sense that the values
 /// returned are the lower bound of each cluster, which can’t be used for labelling, since they
 /// might have many decimal places. To create a legend, the values should be rounded — but the
 /// rounding might be either too loose (and would result in spurious decimal places), or too strict,
