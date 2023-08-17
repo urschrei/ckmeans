@@ -10,6 +10,13 @@ use num_traits::{Num, NumCast};
 use std::error::Error;
 use std::fmt::Debug;
 
+#[cfg(not(target_arch = "wasm32"))]
+mod ffi;
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::ffi::{
+    ckmeans_ffi, drop_ckmeans_result, ExternalArray, InternalArray, WrapperArray,
+};
+
 /// A trait that encompasses most common numeric types (integer **and** floating point)
 pub trait CkNum: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug {}
 impl<T: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug> CkNum for T {}
