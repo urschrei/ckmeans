@@ -5,7 +5,7 @@ defaults:
     shell: bash
 
 env:
-  cratename: rdp
+  cratename: ckmeans
   rustflags: -C rpath
   CARGO_TERM_COLOR: always
 
