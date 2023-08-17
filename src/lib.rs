@@ -35,6 +35,7 @@ fn make_matrix<T: CkNum>(columns: usize, rows: usize) -> Vec<Vec<T>> {
     matrix
 }
 
+#[inline(always)]
 fn ssq<T: CkNum>(j: usize, i: usize, sumx: &[T], sumxsq: &[T]) -> Result<T, Box<dyn Error>> {
     let sji = if j > 0 {
         let muji =
