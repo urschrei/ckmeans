@@ -1,3 +1,5 @@
+//! The FFI module for Ckmeans
+
 use libc::{c_double, c_schar, c_void, size_t};
 use std::f64;
 use std::ptr;
@@ -5,20 +7,17 @@ use std::slice;
 
 use crate::ckmeans;
 
-/// Wrapper for a void pointer to a sequence of [`Array`](struct.Array.html)s, and the sequence length. Used for FFI.
+/// Wrapper for a void pointer to a sequence of [InternalArray]s, and the sequence length. Used for FFI.
 ///
-/// Each sequence entry represents a Ckmeans class.
+/// Each sequence entry represents a single [ckmeans] result class.
 #[repr(C)]
-#[derive(Copy, Clone)]
 pub struct WrapperArray {
-    pub data: *const InternalArray,
+    pub data: *const c_void,
     pub len: size_t,
 }
 
-/// Wrapper for a void pointer to a sequence of floats representing a Ckmeans class, and the
+/// Wrapper for a void pointer to a sequence of floats representing a single [ckmeans] result class, and the
 /// sequence length. Used for FFI.
-///
-/// `data` is a `Vec<c_double>`.
 #[repr(C)]
 #[derive(Clone)]
 pub struct InternalArray {
@@ -27,9 +26,7 @@ pub struct InternalArray {
 }
 
 /// Wrapper for a void pointer to a sequence of floats representing data to be clustered using
-/// Ckmeans, and the sequence length. Used for FFI.
-///
-/// `data` is a `Vec<c_double>`.
+/// [ckmeans], and the sequence length. Used for FFI.
 #[repr(C)]
 pub struct ExternalArray {
     pub data: *const c_void,
@@ -37,8 +34,8 @@ pub struct ExternalArray {
 }
 
 /// We don't need to take ownership of incoming data to be clustered: that happens in CkMeans
-impl From<&ExternalArray> for &[f64] {
-    fn from(arr: &ExternalArray) -> Self {
+impl From<ExternalArray> for &[f64] {
+    fn from(arr: ExternalArray) -> Self {
         unsafe { slice::from_raw_parts(arr.data as *mut f64, arr.len) }
     }
 }
@@ -50,8 +47,8 @@ impl From<Vec<f64>> for InternalArray {
         let blen = boxed.len();
         let rawp = Box::into_raw(boxed);
         InternalArray {
-            data: rawp as *const libc::c_void,
-            len: blen as libc::size_t,
+            data: rawp as *const c_void,
+            len: blen as size_t,
         }
     }
 }
@@ -62,8 +59,8 @@ impl From<Vec<f64>> for ExternalArray {
         let blen = boxed.len();
         let rawp = Box::into_raw(boxed);
         ExternalArray {
-            data: rawp as *const libc::c_void,
-            len: blen as libc::size_t,
+            data: rawp as *const c_void,
+            len: blen as size_t,
         }
     }
 }
@@ -75,8 +72,8 @@ impl From<Vec<Vec<f64>>> for WrapperArray {
         let blen = boxed.len();
         let rawp = Box::into_raw(boxed);
         WrapperArray {
-            data: rawp as *const InternalArray,
-            len: blen as libc::size_t,
+            data: rawp as *const c_void,
+            len: blen as size_t,
         }
     }
 }
@@ -103,11 +100,22 @@ impl From<WrapperArray> for Vec<Vec<f64>> {
     }
 }
 
+/// An FFI wrapper for [ckmeans]. Data returned by this function **must** be freed by calling
+/// [drop_ckmeans_result] before exiting.
+///
+/// # Safety
+///
+/// This function is unsafe because it accesses a raw pointer which could contain arbitrary data
 #[no_mangle]
-pub extern "C" fn ckmeans_ffi(data: &ExternalArray, classes: c_schar) -> WrapperArray {
+pub extern "C" fn ckmeans_ffi(data: ExternalArray, classes: c_schar) -> WrapperArray {
     ckmeans(data.into(), classes).unwrap().into()
 }
 
+/// Drop data returned by [ckmeans_ffi].
+///
+/// # Safety
+///
+/// This function is unsafe because it accesses a raw pointer which could contain arbitrary data
 #[no_mangle]
 pub extern "C" fn drop_ckmeans_result(result: WrapperArray) {
     let _: Vec<Vec<f64>> = result.into();
@@ -123,7 +131,14 @@ mod tests {
             1f64, 12., 13., 14., 15., 16., 2., 2., 3., 5., 7., 1., 2., 5., 7., 1., 5., 82., 1.,
             1.3, 1.1, 78.,
         ];
-        let res = ckmeans_ffi(&i.into(), 3);
-        drop_ckmeans_result(res);
+        let res: Vec<Vec<f64>> = ckmeans_ffi(i.into(), 3).into();
+        let expected = vec![
+            vec![
+                1.0, 1.0, 1.0, 1.0, 1.1, 1.3, 2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0, 7.0, 7.0,
+            ],
+            vec![12., 13., 14., 15., 16.],
+            vec![78., 82.],
+        ];
+        assert_eq!(res, expected);
     }
 }
