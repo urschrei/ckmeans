@@ -222,7 +222,7 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
     // named 'S' originally
     let mut matrix = make_matrix(nclusters, nvalues);
     // named 'J' originally
-    let mut backtrack_matrix = make_matrix(nclusters, nvalues);
+    let mut backtrack_matrix = matrix.clone();
 
     // This is a dynamic programming approach to solving the problem of minimizing
     // within-cluster sum of squares. It's similar to linear regression
