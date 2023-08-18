@@ -17,7 +17,10 @@ A C-compatible FFI implementation is available, along with libraries for major p
 This is a port (including documentation) of David Schnurr's package <https://github.com/schnerd/ckmeans>, incorporating some improvements from Bill Mill's Python + Numpy implementation at <https://github.com/llimllib/ckmeans>.
 
 # Performance
-On an M2 Pro, the algorithm will classify 110k uniformly-distributed i32 values between 0 and 250 into 7 classes in ~12 ms.
+On an M2 Pro, to produce 7 classes:
+
+1. 110k uniformly-distributed i32 values between 0 and 250: ~12 ms
+2. 110k normally-distributed f64 values with a mean of 3.0 and a standard deviation of 1.0: 38 ms
 
 ## Complexity
 $O(n^2k)$. Other approaches such as Hilferink's [`CalcNaturalBreaks`](https://www.geodms.nl/CalcNaturalBreaks) or k-means are faster, but do _not_ guarantee optimality. In practice, they require many rounds to approach an optimal result, so in practice they're the same speed or far slower (in the case of k-means, see Wang and Song (2011), Figure 4) for more than 7 classes while failing to guarantee optimality or reproducibility.
