@@ -8,7 +8,6 @@
 use num_traits::cast::FromPrimitive;
 use num_traits::Float;
 use num_traits::{Num, NumCast};
-use std::error::Error;
 use std::fmt::Debug;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -17,6 +16,9 @@ mod ffi;
 pub use crate::ffi::{
     ckmeans_ffi, drop_ckmeans_result, ExternalArray, InternalArray, WrapperArray,
 };
+
+mod errors;
+pub use crate::errors::CkmeansErr;
 
 /// A trait that encompasses most common numeric types (integer **and** floating point)
 pub trait CkNum: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug {}
@@ -161,7 +163,7 @@ where
 /// homogenous** within and the data is split into representative groups.
 /// This is very useful for visualization, where one may wish to represent
 /// a continuous variable in discrete colour or style groups. This function
-/// can provide groups that emphasize differences between data.
+/// can provide groups – or "classes" – that emphasize differences between data.
 ///
 /// Being a dynamic approach, this algorithm is based on two matrices that
 /// store incrementally-computed values for squared deviations and backtracking
@@ -178,12 +180,12 @@ where
 /// # References
 /// 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
 /// 2. <https://observablehq.com/@visionscarto/natural-breaks>
-pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Box<dyn Error>> {
+pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, CkmeansErr> {
     if nclusters == 0 {
-        return Err("Can't generate 0 classes. Try a positive number.".into());
+        return Err(CkmeansErr::TooFewClassesError);
     }
-    if usize::try_from(nclusters).expect("Couldn't convert u8 to usize") > data.len() {
-        return Err("Can't generate more classes than data values".into());
+    if usize::try_from(nclusters)? > data.len() {
+        return Err(CkmeansErr::TooManyClassesError);
     }
     let nvalues = data.len();
     let mut sorted = numeric_sort(data);
@@ -206,7 +208,7 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Box<d
     // in this way, and this calculation incrementally computes the
     // sum of squares that are later read.
     fill_matrices(&sorted, &mut matrix, &mut backtrack_matrix, nclusters)
-        .ok_or("Couldn't form matrices due to numeric conversion failure")?;
+        .ok_or(CkmeansErr::ConversionError)?;
 
     // The real work of Ckmeans clustering happens in the matrix generation:
     // the generated matrices encode all possible clustering combinations, and
@@ -220,7 +222,7 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Box<d
     // and moves the cluster target with the loop.
     for cluster in (0..backtrack_matrix.len()).rev() {
         let cluster_left = T::to_usize(&backtrack_matrix[cluster][cluster_right])
-            .ok_or("Couldn't convert to usize")?;
+            .ok_or(CkmeansErr::ConversionError)?;
 
         // fill the cluster from the sorted input by taking a slice of the
         // array. the backtrack matrix makes this easy: it stores the
@@ -247,28 +249,20 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Box<d
 pub fn roundbreaks<T: Float + Debug + FromPrimitive>(
     data: &[T],
     nclusters: u8,
-) -> Result<Vec<T>, Box<dyn Error>> {
+) -> Result<Vec<T>, CkmeansErr> {
     let ckm = ckmeans(data, nclusters)?;
     ckm.windows(2)
         .map(|pair| {
-            let p = T::from(10.0).ok_or("couldn't convert from f64")?.powf(
+            let p = T::from(10.0).ok_or(CkmeansErr::ConversionError)?.powf(
                 (T::one()
-                    - (*pair[1]
-                        .first()
-                        .ok_or("couldn't get first element of high window")?
-                        - *pair[0]
-                            .last()
-                            .ok_or("couldn't get last element of low window")?)
+                    - (*pair[1].first().ok_or(CkmeansErr::HighWindowError)?
+                        - *pair[0].last().ok_or(CkmeansErr::LowWindowError)?)
                     .log10())
                 .floor(),
             );
-            Ok((((*pair[1]
-                .first()
-                .ok_or("couldn't get first element of high window")?
-                + *pair[0]
-                    .last()
-                    .ok_or("couldn't get last element of low window")?)
-                / T::from(2.0).ok_or("couldn't convert from f64")?)
+            Ok((((*pair[1].first().ok_or(CkmeansErr::HighWindowError)?
+                + *pair[0].last().ok_or(CkmeansErr::LowWindowError)?)
+                / T::from(2.0).ok_or(CkmeansErr::ConversionError)?)
                 * p)
                 .floor()
                 / p)
