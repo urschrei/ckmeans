@@ -17,7 +17,7 @@ A C-compatible FFI implementation is available, along with libraries for major p
 This is a port (including documentation) of David Schnurr's package <https://github.com/schnerd/ckmeans>, incorporating some improvements from Bill Mill's Python + Numpy implementation at <https://github.com/llimllib/ckmeans>.
 
 # Performance
-On an M2 Pro, the algorithm will classify 110k uniformly-distributed i32 values between 0 and 250 into 7 classes in ~16 ms.
+On an M2 Pro, the algorithm will classify 110k uniformly-distributed i32 values between 0 and 250 into 7 classes in ~12 ms.
 
 ## Complexity
 $O(n^2k)$

@@ -44,20 +44,17 @@ fn make_matrix<T: CkNum>(columns: usize, rows: usize) -> Vec<Vec<T>> {
 }
 
 #[inline(always)]
-fn ssq<T: CkNum>(j: usize, i: usize, sumx: &[T], sumxsq: &[T]) -> Result<T, Box<dyn Error>> {
+fn ssq<T: CkNum>(j: usize, i: usize, sumx: &[T], sumxsq: &[T]) -> Option<T> {
     let sji = if j > 0 {
-        let muji =
-            (sumx[i] - sumx[j - 1]) / T::from_usize(i - j + 1).ok_or("Couldn't convert usize")?;
-        sumxsq[i]
-            - sumxsq[j - 1]
-            - T::from_usize(i - j + 1).ok_or("Couldn't convert usize")? * muji * muji
+        let muji = (sumx[i] - sumx[j - 1]) / T::from_usize(i - j + 1)?;
+        sumxsq[i] - sumxsq[j - 1] - T::from_usize(i - j + 1)? * muji * muji
     } else {
-        sumxsq[i] - (sumx[i] * sumx[i]) / T::from_usize(i + 1).ok_or("Couldn't convert usize")?
+        sumxsq[i] - (sumx[i] * sumx[i]) / T::from_usize(i + 1)?
     };
     if sji < T::zero() {
-        Ok(T::zero())
+        Some(T::zero())
     } else {
-        Ok(sji)
+        Some(sji)
     }
 }
 
@@ -69,28 +66,24 @@ fn fill_matrix_column<T: CkNum>(
     backtrack_matrix: &mut Vec<Vec<T>>,
     sumx: &[T],
     sumxsq: &[T],
-) -> Result<(), Box<dyn Error>>
+) -> Option<()>
 where
 {
     if imin > imax {
-        return Ok(());
+        return Some(());
     }
     // Start at midpoint between imin and imax
     let i = imin + (imax - imin) / 2;
     matrix[column][i] = matrix[column - 1][i - 1];
-    backtrack_matrix[column][i] = T::from_usize(i).ok_or("Couldn't convert usize")?;
+    backtrack_matrix[column][i] = T::from_usize(i)?;
     let mut jlow = column;
     if imin > column {
-        jlow = (jlow).max(
-            T::to_usize(&backtrack_matrix[column][imin - 1]).ok_or("Couldn't convert to usize")?,
-        );
+        jlow = (jlow).max(T::to_usize(&backtrack_matrix[column][imin - 1])?);
     }
-    jlow =
-        (jlow).max(T::to_usize(&backtrack_matrix[column - 1][i]).ok_or("Couldn't convert usize")?);
+    jlow = (jlow).max(T::to_usize(&backtrack_matrix[column - 1][i])?);
     let mut jhigh = i - 1; // the upper end for j
     if imax < matrix[0].len() - 1 {
-        jhigh = jhigh
-            .min(T::to_usize(&backtrack_matrix[column][imax + 1]).ok_or("Couldn't convert usize")?);
+        jhigh = jhigh.min(T::to_usize(&backtrack_matrix[column][imax + 1])?);
     }
     for j in (jlow..jhigh + 1).rev() {
         let sji = ssq(j, i, sumx, sumxsq)?;
@@ -103,19 +96,19 @@ where
         if ssqjlow < matrix[column][i] {
             // shrink the lower bound
             matrix[column][i] = ssqjlow;
-            backtrack_matrix[column][i] = T::from_usize(jlow).ok_or("Couldn't convert to usize")?;
+            backtrack_matrix[column][i] = T::from_usize(jlow)?;
         }
         jlow += 1;
 
         let ssqj = sji + matrix[column - 1][j - 1];
         if ssqj < matrix[column][i] {
             matrix[column][i] = ssqj;
-            backtrack_matrix[column][i] = T::from_usize(j).ok_or("Couldn't convert usize")?;
+            backtrack_matrix[column][i] = T::from_usize(j)?;
         }
     }
     fill_matrix_column(imin, i - 1, column, matrix, backtrack_matrix, sumx, sumxsq)?;
     fill_matrix_column(i + 1, imax, column, matrix, backtrack_matrix, sumx, sumxsq)?;
-    Ok(())
+    Some(())
 }
 
 fn fill_matrices<T: CkNum>(
@@ -123,7 +116,7 @@ fn fill_matrices<T: CkNum>(
     matrix: &mut Vec<Vec<T>>,
     backtrack_matrix: &mut Vec<Vec<T>>,
     nclusters: usize,
-) -> Result<(), Box<dyn Error>>
+) -> Option<()>
 where
 {
     let nvalues = data.len();
@@ -160,7 +153,7 @@ where
             &sumxsq,
         )?;
     }
-    Ok(())
+    Some(())
 }
 
 /// Minimizing the difference within groups – what Wang & Song refer to as
@@ -212,7 +205,8 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Box<d
     // within-cluster sum of squares. It's similar to linear regression
     // in this way, and this calculation incrementally computes the
     // sum of squares that are later read.
-    fill_matrices(&sorted, &mut matrix, &mut backtrack_matrix, nclusters)?;
+    fill_matrices(&sorted, &mut matrix, &mut backtrack_matrix, nclusters)
+        .ok_or("Couldn't form matrices due to numeric conversion failure")?;
 
     // The real work of Ckmeans clustering happens in the matrix generation:
     // the generated matrices encode all possible clustering combinations, and
