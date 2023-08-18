@@ -180,6 +180,27 @@ where
 /// # References
 /// 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
 /// 2. <https://observablehq.com/@visionscarto/natural-breaks>
+///
+/// # Example
+///
+/// ```
+/// use ckmeans::ckmeans;
+///
+/// let input = vec![
+///     1.0f64, 12.0, 13.0, 14.0, 15.0, 16.0, 2.0, 2.0, 3.0, 5.0, 7.0, 1.0, 2.0, 5.0, 7.0,
+///     1.0, 5.0, 82.0, 1.0, 1.3, 1.1, 78.0,
+/// ];
+/// let expected = vec![
+///     vec![
+///         1.0, 1.0, 1.0, 1.0, 1.1, 1.3, 2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0, 7.0, 7.0,
+///     ],
+///     vec![12.0, 13.0, 14.0, 15.0, 16.0],
+///     vec![78.0, 82.0],
+/// ];
+///
+/// let result = ckmeans(&input, 3).unwrap();
+/// assert_eq!(result, expected);
+/// ```
 pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, CkmeansErr> {
     if nclusters == 0 {
         return Err(CkmeansErr::TooFewClassesError);
