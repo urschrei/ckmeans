@@ -67,11 +67,13 @@ int main(int argc, const char *argv[]) {
     printf("\n");
   }
 
-  // Free the allocated memory
+  // Free the C-allocated memory
   for (size_t i = 0; i < adj.len; i++) {
     free(result[i]);
   }
   free(result);
+  // drop the memory allocated by Rust
+  drop_ckmeans_result(adj);
 
   return 0;
 }
