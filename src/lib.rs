@@ -17,7 +17,7 @@ pub use crate::ffi::{
     ckmeans_ffi, drop_ckmeans_result, ExternalArray, InternalArray, WrapperArray,
 };
 mod wasm;
-pub use crate::wasm::ckmeans_wasm;
+pub use crate::wasm::{ckmeans_wasm, roundbreaks_wasm};
 
 mod errors;
 pub use crate::errors::CkmeansErr;
