@@ -1,6 +1,8 @@
 // compile with e.g. `clang -lckmeans -L target/release -o ckmeans_example
 // examples/example.c` from project root run with
 // `LD_LIBRARY_PATH=target/release ./ckmeans_example` from project root
+// Verify lack of leaks (on macOS) by calling:
+// LD_LIBRARY_PATH=target/release leaks --atExit -- ./ckmeans_example
 
 #include <stdint.h>
 #include <stdio.h>
