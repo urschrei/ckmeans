@@ -10,6 +10,8 @@ fn inner_vec_to_js_array(data: &[f64]) -> Float64Array {
 }
 
 /// Convert a ckmeans result to an Array suitable for use by a JS function
+// NB: it's crucial to only work with slices here, as taking ownership of data will cause
+// dangling references
 fn wrapper_vec_to_js_array(data: &[Vec<f64>]) -> Array {
     data.iter().map(|v| inner_vec_to_js_array(v)).collect()
 }
