@@ -35,7 +35,7 @@ Wang and Song (2011) state that the algorithm runs in $O(k^2n)$ in their introdu
 The "matrices" are nested vectors and thus don't have optimal memory layout. In addition, we're not trying to leverage any of the fast linear algebra libraries that might be available if we used e.g. [`ndarray`](https://crates.io/crates/ndarray).
 
 ### Tests
-Perhaps some property-based tests
+Perhaps some property-based tests.
 
 # References
 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
