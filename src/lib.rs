@@ -1,4 +1,4 @@
-//! Ckmeans clustering is an improvement on heuristic-based 1-dimensional clustering
+//! Ckmeans clustering is an improvement on heuristic-based 1-dimensional (univariate) clustering
 //! approaches such as Jenks. The algorithm was developed by
 //! [Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf)
 //! (2011) as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach
@@ -293,7 +293,7 @@ pub fn roundbreaks<T: Float + Debug + FromPrimitive>(
                 .floor()
                 / p)
         })
-        .collect::<Result<Vec<T>, _>>()
+        .collect()
 }
 
 #[cfg(test)]
