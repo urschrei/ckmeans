@@ -1,5 +1,5 @@
-// compile with e.g. `clang -lckmeans -L target/release -o ckmeans_example
-// examples/example.c` from project root run with
+// compile with e.g. `clang -lckmeans -L target/release -o ckmeans_example examples/example.c` from project root
+// run with
 // `LD_LIBRARY_PATH=target/release ./ckmeans_example` from project root
 // Verify lack of leaks (on macOS) by calling:
 // LD_LIBRARY_PATH=target/release leaks --atExit -- ./ckmeans_example
@@ -7,30 +7,19 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "../include/header.h"
 
-typedef struct {
-  void *data;
-  size_t len;
-} externalarray;
 
-typedef struct {
-  void *data;
-  size_t len;
-} nestedarray;
-
-extern externalarray ckmeans_ffi(externalarray, unsigned char);
-extern void drop_ckmeans_result(externalarray);
-
-double **create2DArrayFromStructs(externalarray extArr) {
-  nestedarray *nestedArrs = (nestedarray *)extArr.data;
-  double **twoDArray = (double **)malloc(extArr.len * sizeof(double *));
+double **create2DArrayFromStructs(WrapperArray incomingArrs) {
+  ExternalArray *nestedArrs = (ExternalArray *)incomingArrs.data;
+  double **twoDArray = (double **)malloc(incomingArrs.len * sizeof(double *));
 
   if (twoDArray == NULL) {
     // Memory allocation failed
     exit(1);
   }
 
-  for (size_t i = 0; i < extArr.len; i++) {
+  for (size_t i = 0; i < incomingArrs.len; i++) {
     twoDArray[i] = (double *)malloc(nestedArrs[i].len * sizeof(double));
 
     if (twoDArray[i] == NULL) {
@@ -54,15 +43,15 @@ int main(int argc, const char *argv[]) {
   // cast to void pointer and length
   size_t len = sizeof(input) / sizeof(input[0]);
   void(*vp) = input;
-  externalarray ea = {.len = len, .data = vp};
-  externalarray adj = ckmeans_ffi(ea, 3);
+  ExternalArray ea = {.len = len, .data = vp};
+  WrapperArray adj = ckmeans_ffi(ea, 3);
   // cast back to array
   double **result = create2DArrayFromStructs(adj);
 
   // Print the 2D array
   for (size_t i = 0; i < adj.len; i++) {
     printf("[");
-    for (size_t j = 0; j < ((nestedarray *)adj.data)[i].len; j++) {
+    for (size_t j = 0; j < ((WrapperArray *)adj.data)[i].len; j++) {
       printf("%lf ", result[i][j]);
     }
     printf("]");
