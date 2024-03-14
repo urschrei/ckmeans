@@ -207,7 +207,7 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
     if nclusters == 0 {
         return Err(CkmeansErr::TooFewClassesError);
     }
-    if usize::try_from(nclusters)? > data.len() {
+    if nclusters as usize > data.len() {
         return Err(CkmeansErr::TooManyClassesError);
     }
     let nvalues = data.len();
@@ -219,7 +219,7 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
     if unique_count == 1 {
         return Ok(vec![sorted]);
     }
-    let nclusters = unique_count.min(usize::try_from(nclusters)?);
+    let nclusters = unique_count.min(nclusters as usize);
 
     // named 'S' originally
     let mut matrix = make_matrix(nclusters, nvalues);
