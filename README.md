@@ -2,6 +2,27 @@
 
 [![Documentation](https://img.shields.io/docsrs/ckmeans/latest.svg)](https://docs.rs/ckmeans/latest)
 
+
+```rust
+use ckmeans::ckmeans;
+
+let input = vec![
+    1.0, 12.0, 13.0, 14.0, 15.0, 16.0, 2.0,
+    2.0, 3.0, 5.0, 7.0, 1.0, 2.0, 5.0, 7.0,
+    1.0, 5.0, 82.0, 1.0, 1.3, 1.1, 78.0,
+];
+let expected = vec![
+    vec![
+        1.0, 1.0, 1.0, 1.0, 1.1, 1.3, 2.0, 2.0,
+        2.0, 3.0, 5.0, 5.0, 5.0, 7.0, 7.0,
+    ],
+    vec![12.0, 13.0, 14.0, 15.0, 16.0],
+    vec![78.0, 82.0],
+];
+let result = ckmeans(&input, 3).unwrap();
+assert_eq!(result, expected);
+```
+
 Ckmeans clustering is an improvement on 1-dimensional (univariate) heuristic-based clustering approaches such as [Jenks](https://en.wikipedia.org/wiki/Jenks_natural_breaks_optimization). The algorithm was developed by [Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf) (2011) as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach to the problem of clustering numeric data into groups with the least within-group sum-of-squared-deviations.
 
 Minimizing the difference within groups – what Wang & Song refer to as `withinss`, or within sum-of-squares – means that groups are optimally homogenous within and the data is split into representative groups. This is very useful for visualization, where one may wish to represent a continuous variable in discrete colour or style groups. This function can provide groups that emphasize differences between data.
