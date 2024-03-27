@@ -4,6 +4,29 @@
 //! (2011) as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach
 //! to the problem of clustering numeric data into groups with the least
 //! within-group sum-of-squared-deviations.
+//!
+//! # Example
+//!
+//! ```
+//! use ckmeans::ckmeans;
+//!
+//! let input = vec![
+//!     1.0, 12.0, 13.0, 14.0, 15.0, 16.0, 2.0,
+//!     2.0, 3.0, 5.0, 7.0, 1.0, 2.0, 5.0, 7.0,
+//!     1.0, 5.0, 82.0, 1.0, 1.3, 1.1, 78.0,
+//! ];
+//! let expected = vec![
+//!     vec![
+//!         1.0, 1.0, 1.0, 1.0, 1.1, 1.3, 2.0, 2.0,
+//!         2.0, 3.0, 5.0, 5.0, 5.0, 7.0, 7.0,
+//!     ],
+//!     vec![12.0, 13.0, 14.0, 15.0, 16.0],
+//!     vec![78.0, 82.0],
+//! ];
+//!
+//! let result = ckmeans(&input, 3).unwrap();
+//! assert_eq!(result, expected);
+//! ```
 
 use num_traits::cast::FromPrimitive;
 use num_traits::Float;
