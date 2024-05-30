@@ -7,7 +7,7 @@ use std::slice;
 
 use crate::ckmeans;
 
-/// Wrapper for a void pointer to a sequence of [InternalArray]s, and the sequence length. Used for FFI.
+/// Wrapper for a void pointer to a sequence of [`InternalArray`]s, and the sequence length. Used for FFI.
 ///
 /// Each sequence entry represents a single [ckmeans] result class.
 #[repr(C)]
@@ -32,7 +32,7 @@ pub struct ExternalArray {
     pub len: size_t,
 }
 
-/// We don't need to take ownership of incoming data to be clustered: that happens in CkMeans
+/// We don't need to take ownership of incoming data to be clustered: that happens in `CkMeans`
 impl From<ExternalArray> for &[f64] {
     fn from(arr: ExternalArray) -> Self {
         unsafe { slice::from_raw_parts(arr.data.cast(), arr.len) }
@@ -66,7 +66,7 @@ impl From<Vec<f64>> for ExternalArray {
 
 impl From<Vec<Vec<f64>>> for WrapperArray {
     fn from(arr: Vec<Vec<f64>>) -> Self {
-        let iarrs: Vec<InternalArray> = arr.into_iter().map(|member| member.into()).collect();
+        let iarrs: Vec<InternalArray> = arr.into_iter().map(std::convert::Into::into).collect();
         let boxed = iarrs.into_boxed_slice();
         let blen = boxed.len();
         let rawp = Box::into_raw(boxed);
@@ -97,12 +97,12 @@ impl From<WrapperArray> for Vec<Vec<f64>> {
             let p: *mut [InternalArray] = ptr::slice_from_raw_parts_mut(arr.data as _, arr.len);
             Box::from_raw(p).into_vec()
         };
-        arrays.into_iter().map(|arr| arr.into()).collect()
+        arrays.into_iter().map(std::convert::Into::into).collect()
     }
 }
 
 /// An FFI wrapper for [ckmeans]. Data returned by this function **must** be freed by calling
-/// [drop_ckmeans_result] before exiting.
+/// [`drop_ckmeans_result`] before exiting.
 ///
 /// # Safety
 ///
@@ -112,7 +112,7 @@ pub extern "C" fn ckmeans_ffi(data: ExternalArray, classes: c_uchar) -> WrapperA
     ckmeans(data.into(), classes).unwrap().into()
 }
 
-/// Drop data returned by [ckmeans_ffi].
+/// Drop data returned by [`ckmeans_ffi`].
 ///
 /// # Safety
 ///
