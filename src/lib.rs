@@ -93,9 +93,7 @@ fn fill_matrix_column<T: CkNum>(
     backtrack_matrix: &mut Vec<Vec<T>>,
     sumx: &[T],
     sumxsq: &[T],
-) -> Option<()>
-where
-{
+) -> Option<()> {
     if imin > imax {
         return Some(());
     }
