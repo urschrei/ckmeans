@@ -24,10 +24,7 @@ impl Display for CkmeansErr {
                 write!(f, "Couldn't get first element of high window")
             }
             CkmeansErr::TooFewClassesError => {
-                write!(
-                    f,
-                    "You can't specify 0 classes. Try a positive number"
-                )
+                write!(f, "You can't specify 0 classes. Try a positive number")
             }
             CkmeansErr::TooManyClassesError => {
                 write!(

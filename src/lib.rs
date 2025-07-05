@@ -45,6 +45,9 @@ pub use crate::wasm::{ckmeans_wasm, roundbreaks_wasm};
 mod errors;
 pub use crate::errors::CkmeansErr;
 
+/// Result type for ckmeans_indices: (sorted_data, cluster_ranges)
+pub type ClusterIndices<T> = (Vec<T>, Vec<(usize, usize)>);
+
 /// A trait that encompasses most common numeric types (integer **and** floating point)
 pub trait CkNum: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug {}
 impl<T: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug> CkNum for T {}
@@ -65,18 +68,43 @@ fn unique_count_sorted<T: CkNum>(input: &mut [T]) -> usize {
     }
 }
 
-fn make_matrix<T: CkNum>(columns: usize, rows: usize) -> Vec<Vec<T>> {
-    let matrix: Vec<Vec<T>> = (0..columns).map(|_| vec![T::zero(); rows]).collect();
-    matrix
+/// Flat matrix structure for better cache locality
+struct FlatMatrix<T> {
+    data: Vec<T>,
+    rows: usize,
+    cols: usize,
+}
+
+impl<T: CkNum> FlatMatrix<T> {
+    fn new(rows: usize, cols: usize) -> Self {
+        Self {
+            data: vec![T::zero(); rows * cols],
+            rows,
+            cols,
+        }
+    }
+
+    #[inline]
+    fn get(&self, row: usize, col: usize) -> T {
+        self.data[row * self.cols + col]
+    }
+
+    #[inline]
+    fn set(&mut self, row: usize, col: usize, value: T) {
+        self.data[row * self.cols + col] = value;
+    }
 }
 
 #[inline(always)]
 fn ssq<T: CkNum>(j: usize, i: usize, sumx: &[T], sumxsq: &[T]) -> Option<T> {
+    let n = T::from_usize(i - j + 1)?;
     let sji = if j > 0 {
-        let muji = (sumx[i] - sumx[j - 1]) / T::from_usize(i - j + 1)?;
-        sumxsq[i] - sumxsq[j - 1] - T::from_usize(i - j + 1)? * muji * muji
+        let sum_diff = sumx[i] - sumx[j - 1];
+        let muji = sum_diff / n;
+        sumxsq[i] - sumxsq[j - 1] - n * muji * muji
     } else {
-        sumxsq[i] - (sumx[i] * sumx[i]) / T::from_usize(i + 1)?
+        let n_plus_one = T::from_usize(i + 1)?;
+        sumxsq[i] - (sumx[i] * sumx[i]) / n_plus_one
     };
     if sji < T::zero() {
         Some(T::zero())
@@ -89,77 +117,97 @@ fn fill_matrix_column<T: CkNum>(
     imin: usize,
     imax: usize,
     column: usize,
-    matrix: &mut Vec<Vec<T>>,
-    backtrack_matrix: &mut Vec<Vec<T>>,
+    matrix: &mut FlatMatrix<T>,
+    backtrack_matrix: &mut FlatMatrix<usize>,
     sumx: &[T],
     sumxsq: &[T],
 ) -> Option<()> {
-    if imin > imax {
-        return Some(());
-    }
-    // Start at midpoint between imin and imax
-    let i = imin + (imax - imin) / 2;
-    matrix[column][i] = matrix[column - 1][i - 1];
-    backtrack_matrix[column][i] = T::from_usize(i)?;
-    let mut jlow = column;
-    if imin > column {
-        jlow = (jlow).max(T::to_usize(&backtrack_matrix[column][imin - 1])?);
-    }
-    jlow = (jlow).max(T::to_usize(&backtrack_matrix[column - 1][i])?);
-    let mut jhigh = i - 1; // the upper end for j
-    if imax < matrix[0].len() - 1 {
-        jhigh = jhigh.min(T::to_usize(&backtrack_matrix[column][imax + 1])?);
-    }
-    for j in (jlow..=jhigh).rev() {
-        let sji = ssq(j, i, sumx, sumxsq)?;
-        if sji + matrix[column - 1][jlow - 1] >= matrix[column][i] {
-            break;
-        }
-        let sjlowi = ssq(jlow, i, sumx, sumxsq)?;
+    // Stack to simulate recursion: (imin, imax)
+    // Maximum depth is log2(n) for binary tree traversal
+    let capacity = if imax > imin {
+        ((imax - imin + 1) as f64).log2().ceil() as usize + 1
+    } else {
+        1
+    };
+    let mut stack = Vec::with_capacity(capacity);
+    stack.push((imin, imax));
 
-        let ssqjlow = sjlowi + matrix[column - 1][jlow - 1];
-        if ssqjlow < matrix[column][i] {
-            // shrink the lower bound
-            matrix[column][i] = ssqjlow;
-            backtrack_matrix[column][i] = T::from_usize(jlow)?;
+    while let Some((imin, imax)) = stack.pop() {
+        if imin > imax {
+            continue;
         }
-        jlow += 1;
 
-        let ssqj = sji + matrix[column - 1][j - 1];
-        if ssqj < matrix[column][i] {
-            matrix[column][i] = ssqj;
-            backtrack_matrix[column][i] = T::from_usize(j)?;
+        // Start at midpoint between imin and imax
+        let i = imin + (imax - imin) / 2;
+        matrix.set(column, i, matrix.get(column - 1, i - 1));
+        backtrack_matrix.set(column, i, i);
+        let mut jlow = column;
+        if imin > column {
+            jlow = (jlow).max(backtrack_matrix.get(column, imin - 1));
+        }
+        jlow = (jlow).max(backtrack_matrix.get(column - 1, i));
+        let mut jhigh = i - 1; // the upper end for j
+        if imax < matrix.cols - 1 {
+            jhigh = jhigh.min(backtrack_matrix.get(column, imax + 1));
+        }
+        for j in (jlow..=jhigh).rev() {
+            let sji = ssq(j, i, sumx, sumxsq)?;
+            if sji + matrix.get(column - 1, jlow - 1) >= matrix.get(column, i) {
+                break;
+            }
+            let sjlowi = ssq(jlow, i, sumx, sumxsq)?;
+
+            let ssqjlow = sjlowi + matrix.get(column - 1, jlow - 1);
+            if ssqjlow < matrix.get(column, i) {
+                // shrink the lower bound
+                matrix.set(column, i, ssqjlow);
+                backtrack_matrix.set(column, i, jlow);
+            }
+            jlow += 1;
+
+            let ssqj = sji + matrix.get(column - 1, j - 1);
+            if ssqj < matrix.get(column, i) {
+                matrix.set(column, i, ssqj);
+                backtrack_matrix.set(column, i, j);
+            }
+        }
+
+        // Push right range first (so left is processed first when popped)
+        if i < imax {
+            stack.push((i + 1, imax));
+        }
+        if imin < i {
+            stack.push((imin, i - 1));
         }
     }
-    fill_matrix_column(imin, i - 1, column, matrix, backtrack_matrix, sumx, sumxsq)?;
-    fill_matrix_column(i + 1, imax, column, matrix, backtrack_matrix, sumx, sumxsq)?;
     Some(())
 }
 
 fn fill_matrices<T: CkNum>(
     data: &[T],
-    matrix: &mut Vec<Vec<T>>,
-    backtrack_matrix: &mut Vec<Vec<T>>,
+    matrix: &mut FlatMatrix<T>,
+    backtrack_matrix: &mut FlatMatrix<usize>,
     nclusters: usize,
-) -> Option<()>
-where
-{
+) -> Option<()> {
     let nvalues = data.len();
-    let mut sumx: Vec<T> = vec![T::zero(); nvalues];
-    let mut sumxsq: Vec<T> = vec![T::zero(); nvalues];
+    let mut sumx = Vec::with_capacity(nvalues);
+    let mut sumxsq = Vec::with_capacity(nvalues);
     let shift = data[nvalues / 2];
     // Initialize first row in matrix & backtrack_matrix
+    // Pre-compute sumx and sumxsq
+    sumx.push(data[0] - shift);
+    sumxsq.push((data[0] - shift) * (data[0] - shift));
+
+    for i in 1..nvalues {
+        let shifted = data[i] - shift;
+        sumx.push(sumx[i - 1] + shifted);
+        sumxsq.push(sumxsq[i - 1] + shifted * shifted);
+    }
+
+    // Initialize matrix for k = 0
     for i in 0..nvalues {
-        if i == 0 {
-            sumx[0] = data[0] - shift;
-            sumxsq[0] = (data[0] - shift) * (data[0] - shift);
-        } else {
-            sumx[i] = sumx[i - 1] + data[i] - shift;
-            sumxsq[i] = sumxsq[i - 1] + (data[i] - shift) * (data[i] - shift);
-        }
-        // Initialize for k = 0
-        matrix[0][i] = ssq(0, i, &sumx, &sumxsq)?;
-        backtrack_matrix[0][i] = T::zero();
+        matrix.set(0, i, ssq(0, i, &sumx, &sumxsq)?);
+        backtrack_matrix.set(0, i, 0);
     }
     for k in 1..nclusters {
         let imin = if k < nclusters {
@@ -225,6 +273,36 @@ where
 /// assert_eq!(result, expected);
 /// ```
 pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, CkmeansErr> {
+    let (sorted, indices) = ckmeans_indices(data, nclusters)?;
+
+    // Convert indices to actual clusters
+    let mut clusters = Vec::with_capacity(indices.len());
+    for range in indices {
+        let mut cluster = Vec::with_capacity(range.1 - range.0 + 1);
+        cluster.extend_from_slice(&sorted[range.0..=range.1]);
+        clusters.push(cluster);
+    }
+    Ok(clusters)
+}
+
+/// Cluster data and return the sorted data with cluster index ranges.
+/// This avoids copying data into separate cluster vectors.
+///
+/// Returns: (sorted_data, cluster_ranges) where cluster_ranges contains (start, end) inclusive indices
+///
+/// # Example
+/// ```
+/// use ckmeans::ckmeans_indices;
+///
+/// let input = vec![1.0, 12.0, 13.0, 2.0, 3.0, 5.0, 82.0, 78.0];
+/// let (sorted, indices) = ckmeans_indices(&input, 3).unwrap();
+/// // sorted contains all values in sorted order
+/// // indices contains [(0, 4), (5, 6), (7, 7)] representing the three clusters
+/// ```
+pub fn ckmeans_indices<T: CkNum>(
+    data: &[T],
+    nclusters: u8,
+) -> Result<ClusterIndices<T>, CkmeansErr> {
     if nclusters == 0 {
         return Err(CkmeansErr::TooFewClassesError);
     }
@@ -238,14 +316,14 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
     // if all of the input values are identical, there's one cluster
     // with all of the input in it.
     if unique_count == 1 {
-        return Ok(vec![sorted]);
+        return Ok((sorted, vec![(0, nvalues - 1)]));
     }
     let nclusters = unique_count.min(nclusters as usize);
 
     // named 'S' originally
-    let mut matrix = make_matrix(nclusters, nvalues);
-    // named 'J' originally
-    let mut backtrack_matrix = matrix.clone();
+    let mut matrix = FlatMatrix::new(nclusters, nvalues);
+    // named 'J' originally - store as usize to avoid conversions
+    let mut backtrack_matrix = FlatMatrix::<usize>::new(nclusters, nvalues);
 
     // This is a dynamic programming approach to solving the problem of minimizing
     // within-cluster sum of squares. It's similar to linear regression
@@ -258,26 +336,23 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
     // the generated matrices encode all possible clustering combinations, and
     // once they're generated we can solve for the best clustering groups
     // very quickly.
-    let mut clusters: Vec<Vec<T>> = Vec::with_capacity(nclusters);
-    let mut cluster_right = backtrack_matrix[0].len() - 1;
+    let mut indices: Vec<(usize, usize)> = Vec::with_capacity(nclusters);
+    let mut cluster_right = backtrack_matrix.cols - 1;
 
     // Backtrack the clusters from the dynamic programming matrix. This
     // starts at the bottom-right corner of the matrix (if the top-left is 0, 0),
     // and moves the cluster target with the loop.
-    for cluster in (0..backtrack_matrix.len()).rev() {
-        let cluster_left = T::to_usize(&backtrack_matrix[cluster][cluster_right])
-            .ok_or(CkmeansErr::ConversionError)?;
+    for cluster in (0..backtrack_matrix.rows).rev() {
+        let cluster_left = backtrack_matrix.get(cluster, cluster_right);
 
-        // fill the cluster from the sorted input by taking a slice of the
-        // array. the backtrack matrix makes this easy: it stores the
-        // indexes where the cluster should start and end.
-        clusters.push(sorted[cluster_left..=cluster_right].to_vec());
+        // Store the indices instead of copying data
+        indices.push((cluster_left, cluster_right));
         if cluster > 0 {
             cluster_right = cluster_left - 1;
         }
     }
-    clusters.reverse();
-    Ok(clusters)
+    indices.reverse();
+    Ok((sorted, indices))
 }
 
 /// The boundaries of the classes returned by [ckmeans] are "ugly" in the sense that the values
