@@ -20,18 +20,18 @@ maintenance = { status = "passively-maintained" }
 headers = ["cbindgen"]
 
 [dependencies]
-js-sys = "0.3.64"
-libc = "0.2.147"
+js-sys = "0.3.77"
+libc = "0.2.174"
 num-traits = "0.2.16"
 wasm-bindgen = "0.2"
 
 [dev-dependencies]
-criterion = "0.5.1"
-rand = "0.8.5"
-rand_distr = "0.4.3"
+criterion = "0.6.0"
+rand = "0.9.1"
+rand_distr = "0.5.1"
 
 [build-dependencies]
-cbindgen = { version = "0.24.5", default-features=false, optional = true }
+cbindgen = { version = "0.29.0", default-features=false, optional = true }
 
 [[bench]]
 name = "benchmark"
