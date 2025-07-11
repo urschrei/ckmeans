@@ -38,7 +38,7 @@ A C-compatible FFI implementation is available, along with libraries for major p
 A WASM module is also available, giving access to both `ckmeans` and `roundbreaks`. Generate the module using [`wasm-bindgen`](https://rustwasm.github.io/docs/wasm-bindgen/) and the appropriate target, or use the [NPM package](https://www.npmjs.com/package/@urschrei/ckmeans).
 
 # Implementation
-This is a port (including documentation) of David Schnurr's package <https://github.com/schnerd/ckmeans>, incorporating some improvements from Bill Mill's Python + Numpy implementation at <https://github.com/llimllib/ckmeans>.
+This is a port (including documentation) of David Schnurr's package <https://github.com/schnerd/ckmeans>, incorporating some improvements from Bill Mill's Python + Numpy implementation at <https://github.com/llimllib/ckmeans>. The latest version switches to a flat array and a stack-based matrix population strategy (previously recursive), giving a 25 % speedup.
 
 # Performance
 On an M2 Pro, to produce 7 classes:
@@ -53,7 +53,7 @@ Wang and Song (2011) state that the algorithm runs in $O(k^2n)$ in their introdu
 
 ## Possible Improvements
 ### Perf
-The "matrices" are nested vectors and thus don't have optimal memory layout. In addition, we're not trying to leverage any of the fast linear algebra libraries that might be available if we used e.g. [`ndarray`](https://crates.io/crates/ndarray).
+We're not trying to leverage any of the fast linear algebra libraries that might be available if we used e.g. [`ndarray`](https://crates.io/crates/ndarray).
 
 ### Tests
 Perhaps some property-based tests.
