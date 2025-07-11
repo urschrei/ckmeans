@@ -1,15 +1,15 @@
 [package]
 name = "ckmeans"
 description = "A Rust implementation of Wang and Song's Ckmeans clustering algorithm"
-version = "1.2.1"
-edition = "2021"
+version = "1.3.0"
+edition = "2024"
 license = "BlueOak-1.0.0"
 repository = "https://github.com/urschrei/ckmeans"
 documentation = "https://docs.rs/ckmeans"
 readme = "README.md"
 keywords = ["gis", "geo", "spatial", "clustering"]
 autobenches = true
-rust-version = "1.70"
+rust-version = "1.85"
 categories = ["science::geo"]
 
 [badges]

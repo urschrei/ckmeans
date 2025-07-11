@@ -107,7 +107,7 @@ impl From<WrapperArray> for Vec<Vec<f64>> {
 /// # Safety
 ///
 /// This function is unsafe because it accesses a raw pointer which could contain arbitrary data
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ckmeans_ffi(data: ExternalArray, classes: c_uchar) -> WrapperArray {
     ckmeans(data.into(), classes).unwrap().into()
 }
@@ -117,7 +117,7 @@ pub extern "C" fn ckmeans_ffi(data: ExternalArray, classes: c_uchar) -> WrapperA
 /// # Safety
 ///
 /// This function is unsafe because it accesses a raw pointer which could contain arbitrary data
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn drop_ckmeans_result(result: WrapperArray) {
     let _: Vec<Vec<f64>> = result.into();
 }
