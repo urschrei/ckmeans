@@ -1,15 +1,10 @@
-#[cfg(test)]
 use ckmeans::ckmeans;
-#[cfg(test)]
 use rand::Rng;
-#[cfg(test)]
 use rand_distr::{Distribution, Normal, Uniform};
-#[cfg(test)]
 use std::hint::black_box;
 
 /// Generate representative workloads for PGO training
 /// Covers k values from 3 to 25 with various data distributions
-#[cfg(test)]
 pub fn run_pgo_workloads() {
     println!("Running PGO training workloads...");
 
@@ -122,15 +117,6 @@ pub fn run_pgo_workloads() {
     println!("PGO training workloads complete!");
 }
 
-#[cfg(test)]
 fn main() {
     run_pgo_workloads();
-}
-
-#[cfg(not(test))]
-fn main() {
-    println!(
-        "This binary requires dev-dependencies and should be built with 'cargo test --no-run'"
-    );
-    std::process::exit(1);
 }

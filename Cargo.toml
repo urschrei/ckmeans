@@ -38,9 +38,8 @@ harness = false
 name = "pgo_validation"
 harness = false
 
-[[bin]]
-name = "pgo_training"
-path = "tools/pgo_training.rs"
+# PGO training binary - not built by default
+# Built only via 'cargo test --no-run --bin pgo_training'
 
 [features]
 headers = ["cbindgen"]

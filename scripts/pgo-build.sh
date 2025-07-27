@@ -29,9 +29,11 @@ mkdir -p target/pgo-profiles
 
 # Step 1: Build with PGO instrumentation
 echo -e "${GREEN}Step 1: Building with PGO instrumentation...${NC}"
-# Build with test configuration to include dev-dependencies
+# Build PGO training binary in the tools directory
+cd "$PROJECT_ROOT/tools"
 RUSTFLAGS="-Cprofile-generate=$PROJECT_ROOT/target/pgo-profiles" \
-    cargo test --no-run --bin pgo_training --profile pgo-generate
+    cargo build --bin pgo_training --profile pgo-generate
+cd "$PROJECT_ROOT"
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}Failed to build with PGO instrumentation${NC}"
@@ -40,7 +42,7 @@ fi
 
 # Step 2: Run training workloads
 echo -e "${GREEN}Step 2: Running training workloads...${NC}"
-./target/pgo-generate/pgo_training
+./tools/target/pgo-generate/pgo_training
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}Failed to run training workloads${NC}"

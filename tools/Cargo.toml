@@ -1,0 +1,26 @@
+[package]
+name = "pgo_training"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "pgo_training"
+path = "pgo_training.rs"
+
+[dependencies]
+ckmeans = { path = ".." }
+rand = "0.9.1"
+rand_distr = "0.5.1"
+
+# Profile for generating PGO data
+[profile.pgo-generate]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+
+# Profile for using PGO data
+[profile.pgo-use]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
