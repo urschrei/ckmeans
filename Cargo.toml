@@ -41,9 +41,12 @@ harness = false
 [[bin]]
 name = "pgo_training"
 path = "benches/pgo_training.rs"
+required-features = ["__internal_benchmarking"]
 
 [features]
 headers = ["cbindgen"]
+# Internal feature for benchmarking binaries - not for public use
+__internal_benchmarking = []
 
 [lib]
 name = "ckmeans"
