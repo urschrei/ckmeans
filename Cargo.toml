@@ -37,6 +37,10 @@ cbindgen = { version = "0.29.0", default-features=false, optional = true }
 name = "benchmark"
 harness = false
 
+[[bench]]
+name = "pgo_validation"
+harness = false
+
 [[bin]]
 name = "pgo_training"
 path = "benches/pgo_training.rs"
