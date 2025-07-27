@@ -95,44 +95,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - name: Install Rust llvm-tools (Linux)
-        if: matrix.build == 'linux' || matrix.build == 'linux-arm64'
-        run: rustup component add llvm-tools-preview
-
-      - name: Build with PGO (Linux)
-        if: matrix.build == 'linux' || matrix.build == 'linux-arm64'
-        run: |
-          # PGO Build Process
-          mkdir -p target/pgo-profiles
-          
-          # Find Rust's llvm-profdata
-          RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
-          RUST_LLVM_PROFDATA=$(find "$RUSTUP_HOME" -name "llvm-profdata" -type f 2>/dev/null | head -n1)
-          
-          if [ -z "$RUST_LLVM_PROFDATA" ]; then
-            echo "Error: llvm-profdata not found"
-            exit 1
-          fi
-          echo "Using llvm-profdata: $RUST_LLVM_PROFDATA"
-          
-          # Build with instrumentation in tools directory
-          cd tools
-          RUSTFLAGS="-Cprofile-generate=$PWD/../target/pgo-profiles" \
-            cargo build --bin pgo_training --profile pgo-generate
-          cd ..
-          
-          # Run training
-          ./tools/target/pgo-generate/pgo_training
-          
-          # Merge profiles
-          "$RUST_LLVM_PROFDATA" merge -o target/pgo-profiles/merged.profdata target/pgo-profiles/*.profraw
-          
-          # Build with PGO
-          RUSTFLAGS="-Cprofile-use=$PWD/target/pgo-profiles/merged.profdata" \
-            cargo build --profile pgo-use --target=${{ matrix.target }} --features headers
-
-      - name: Build with cargo (non-Linux)
-        if: matrix.build != 'linux' && matrix.build != 'linux-arm64'
+      - name: Build with cargo
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deptarget }}
         run: cargo build --release --target=${{ matrix.target }} --features headers
@@ -161,8 +124,7 @@ jobs:
           if [ "$RUNNER_OS" == "Linux" ]; then
             echo "TYPE=tar" >> $GITHUB_ENV
             echo "EXTENSION=tar.gz" >> $GITHUB_ENV
-            # Use PGO-optimized build for Linux
-            cp target/pgo-use/*.so $stage/
+            cp target/${{ matrix.target }}/release/*.so $stage/
           fi
           if [ "$RUNNER_OS" == "macOS" ]; then
             echo "TYPE=tar" >> $GITHUB_ENV
