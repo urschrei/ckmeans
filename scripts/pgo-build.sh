@@ -29,8 +29,9 @@ mkdir -p target/pgo-profiles
 
 # Step 1: Build with PGO instrumentation
 echo -e "${GREEN}Step 1: Building with PGO instrumentation...${NC}"
+# Note: --all-features ensures dev-dependencies are available for the binary
 RUSTFLAGS="-Cprofile-generate=$PROJECT_ROOT/target/pgo-profiles" \
-    cargo build --bin pgo_training --profile pgo-generate
+    cargo build --bin pgo_training --profile pgo-generate --all-features
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}Failed to build with PGO instrumentation${NC}"

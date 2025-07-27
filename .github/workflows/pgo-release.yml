@@ -85,7 +85,7 @@ jobs:
         # Build with instrumentation
         # Use absolute path for Windows
         RUSTFLAGS="-Cprofile-generate=$PWD/target/pgo-profiles" \
-          cargo build --bin pgo_training --profile pgo-generate
+          cargo build --bin pgo_training --profile pgo-generate --all-features
         
         # Run training
         ./target/pgo-generate/pgo_training.exe
