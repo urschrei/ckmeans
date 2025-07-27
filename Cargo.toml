@@ -43,3 +43,18 @@ crate-type = ["rlib", "cdylib"]
 test = true
 doctest = true
 doc = true
+
+# Profile for generating PGO data
+[profile.pgo-generate]
+inherits = "release"
+# Enable PGO instrumentation
+opt-level = 3
+lto = "fat"
+
+# Profile for using PGO data
+[profile.pgo-use]
+inherits = "release"
+# Maximum optimizations with PGO data
+opt-level = 3
+lto = "fat"
+codegen-units = 1
