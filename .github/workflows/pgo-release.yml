@@ -79,19 +79,32 @@ jobs:
           echo "Error: llvm-profdata not found"
           exit 1
         fi
+        echo "Using llvm-profdata: $RUST_LLVM_PROFDATA"
         
         # Build with instrumentation
-        RUSTFLAGS="-Cprofile-generate=target/pgo-profiles" \
+        # Use absolute path for Windows
+        RUSTFLAGS="-Cprofile-generate=$PWD/target/pgo-profiles" \
           cargo build --bin pgo_training --profile pgo-generate
         
         # Run training
         ./target/pgo-generate/pgo_training.exe
         
+        # List profile files
+        echo "Profile files generated:"
+        ls -la target/pgo-profiles/
+        
         # Merge profiles
         "$RUST_LLVM_PROFDATA" merge -o target/pgo-profiles/merged.profdata target/pgo-profiles/*.profraw
         
+        # Verify merged file exists
+        if [ ! -f "target/pgo-profiles/merged.profdata" ]; then
+          echo "Error: merged.profdata was not created"
+          exit 1
+        fi
+        
         # Build with PGO
-        RUSTFLAGS="-Cprofile-use=target/pgo-profiles/merged.profdata" \
+        # Use absolute path for Windows
+        RUSTFLAGS="-Cprofile-use=$PWD/target/pgo-profiles/merged.profdata" \
           cargo build --profile pgo-use
 
     - name: Run benchmarks
