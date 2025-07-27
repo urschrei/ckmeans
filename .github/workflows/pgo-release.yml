@@ -83,9 +83,9 @@ jobs:
         echo "Using llvm-profdata: $RUST_LLVM_PROFDATA"
         
         # Build with instrumentation
-        # Use absolute path for Windows
+        # Use absolute path for Windows, build as test to include dev-dependencies
         RUSTFLAGS="-Cprofile-generate=$PWD/target/pgo-profiles" \
-          cargo build --bin pgo_training --profile pgo-generate --features __internal_benchmarking
+          cargo test --no-run --bin pgo_training --profile pgo-generate
         
         # Run training
         ./target/pgo-generate/pgo_training.exe
