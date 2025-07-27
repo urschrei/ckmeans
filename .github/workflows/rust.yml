@@ -53,6 +53,7 @@ jobs:
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
     name: Build and release on ${{ matrix.os }} (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -61,29 +62,26 @@ jobs:
           os: ubuntu-latest
           rust: stable
           target: x86_64-unknown-linux-gnu
-          use-cross: false
+          container: quay.io/pypa/manylinux_2_28_x86_64
         - build: linux-arm64
           os: ubuntu-24.04-arm
           rust: stable
           target: aarch64-unknown-linux-gnu
-          use-cross: false
+          container: quay.io/pypa/manylinux_2_28_aarch64
         - build: macos
           os: macos-13
           rust: stable
           target: x86_64-apple-darwin
-          use-cross: false
           deptarget: 10.9
         - build: macos
           os: macos-13
           rust: stable
           target: aarch64-apple-darwin
-          use-cross: false
           deptarget: 11.0
         - build: windows
           os: windows-latest
           rust: stable
           target: x86_64-pc-windows-msvc
-          use-cross: false
     steps:
       - name: Switch to macOS 13.x SDK
         if: matrix.target == 'aarch64-apple-darwin'
