@@ -61,12 +61,12 @@ jobs:
           os: ubuntu-latest
           rust: stable
           target: x86_64-unknown-linux-gnu
-          use-cross: true
-        - build: linux
-          os: ubuntu-latest
+          use-cross: false
+        - build: linux-arm64
+          os: ubuntu-24.04-arm
           rust: stable
           target: aarch64-unknown-linux-gnu
-          use-cross: true
+          use-cross: false
         - build: macos
           os: macos-13
           rust: stable
@@ -97,24 +97,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - name: Install cross
-        if: matrix.use-cross == true
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cross
-      - name: Build with cross
-        if: matrix.use-cross == true
-        env:
-          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deptarget }}
-        run: cross build --release --target=${{ matrix.target }} --features headers
       - name: Build with cargo
-        if: matrix.use-cross == false
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deptarget }}
         run: cargo build --release --target=${{ matrix.target }} --features headers
-      - name: Install aarch64 related packages
-        if: matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64-unknown-linux-gnu'
-        run: sudo apt-get update && sudo apt-get install gcc-aarch64-linux-gnu qemu-system-arm
       - name: Gather Assets
         run: |
           src=$(pwd)
