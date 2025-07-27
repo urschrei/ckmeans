@@ -13,20 +13,29 @@ on:
 
 jobs:
   pgo-build:
-    name: PGO Build - ${{ matrix.os }}
+    name: PGO Build - ${{ matrix.build }}
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container || '' }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
         include:
-          - os: ubuntu-latest
+          - build: linux-x86_64
+            os: ubuntu-latest
+            container: quay.io/pypa/manylinux_2_28_x86_64
             artifact_name: libckmeans.so
             asset_name: libckmeans-linux-amd64.so
-          - os: macos-latest
+          - build: linux-arm64
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            artifact_name: libckmeans.so
+            asset_name: libckmeans-linux-arm64.so
+          - build: macos
+            os: macos-latest
             artifact_name: libckmeans.dylib
             asset_name: libckmeans-darwin-amd64.dylib
-          - os: windows-latest
+          - build: windows
+            os: windows-latest
             artifact_name: ckmeans.dll
             asset_name: ckmeans-windows-amd64.dll
 
@@ -163,7 +172,8 @@ jobs:
           This release includes Profile-Guided Optimization (PGO) builds for better performance.
           
           ### Assets
-          - `libckmeans-linux-amd64.so` - Linux shared library
+          - `libckmeans-linux-amd64.so` - Linux x86_64 shared library (manylinux_2_28)
+          - `libckmeans-linux-arm64.so` - Linux ARM64 shared library (manylinux_2_28)
           - `libckmeans-darwin-amd64.dylib` - macOS dynamic library  
           - `ckmeans-windows-amd64.dll` - Windows DLL
           
