@@ -24,11 +24,11 @@ js-sys = "0.3.77"
 libc = "0.2.174"
 num-traits = "0.2.16"
 wasm-bindgen = "0.2"
+rand = "0.9.1"
+rand_distr = "0.5.1"
 
 [dev-dependencies]
 criterion = "0.6.0"
-rand = "0.9.1"
-rand_distr = "0.5.1"
 
 [build-dependencies]
 cbindgen = { version = "0.29.0", default-features=false, optional = true }
@@ -37,9 +37,32 @@ cbindgen = { version = "0.29.0", default-features=false, optional = true }
 name = "benchmark"
 harness = false
 
+[[bench]]
+name = "pgo_validation"
+harness = false
+
+[[bin]]
+name = "pgo_training"
+path = "benches/pgo_training.rs"
+
 [lib]
 name = "ckmeans"
 crate-type = ["rlib", "cdylib"]
 test = true
 doctest = true
 doc = true
+
+# Profile for generating PGO data
+[profile.pgo-generate]
+inherits = "release"
+# Enable PGO instrumentation
+opt-level = 3
+lto = "fat"
+
+# Profile for using PGO data
+[profile.pgo-use]
+inherits = "release"
+# Maximum optimizations with PGO data
+opt-level = 3
+lto = "fat"
+codegen-units = 1

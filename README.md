@@ -46,6 +46,30 @@ On an M2 Pro, to produce 7 classes:
 1. 110k uniformly-distributed i32 values between 0 and 250: ~9 ms
 2. 110k normally-distributed f64 values with a mean of 3.0 and a standard deviation of 1.0: 32 ms
 
+## Profile-Guided Optimization (PGO)
+This library supports PGO builds for enhanced performance. PGO typically provides 10-30% performance improvements by optimizing hot paths based on real-world usage patterns.
+
+### Building with PGO
+To build an optimized version using PGO:
+
+```bash
+# Run the automated PGO build script
+chmod +x scripts/pgo-build.sh
+./scripts/pgo-build.sh
+```
+
+The script will:
+1. Build with instrumentation to collect profile data
+2. Run comprehensive training workloads (k=3 to 25)
+3. Build the final optimized binary using collected profiles
+
+Optimized binaries will be available in `target/pgo-optimized/`.
+
+### Using PGO in Production
+- For Rust projects: Use the `.rlib` file from `target/pgo-optimized/`
+- For C/FFI: Use the platform-specific shared library (`.so`, `.dylib`, or `.dll`)
+- For maximum performance, ensure your use case matches the training profile (k values between 3-25)
+
 ## Complexity
 $O(kn)$. Other approaches such as Hilferink's [`CalcNaturalBreaks`](https://www.geodms.nl/CalcNaturalBreaks) or k-means have comparable complexity, but do _not_ guarantee optimality. In practice, they require many rounds to approach an optimal result, so in practice they're slower.
 ### Note
