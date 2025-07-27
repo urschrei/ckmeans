@@ -110,6 +110,7 @@ jobs:
           cargo build --profile pgo-use
 
     - name: Run benchmarks
+      shell: bash
       run: |
         echo "Standard release build:"
         cargo build --release
