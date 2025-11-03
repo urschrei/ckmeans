@@ -135,7 +135,7 @@ jobs:
         fi
 
     - name: Upload PGO artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: pgo-${{ matrix.os }}
         path: target/pgo-optimized/
@@ -156,7 +156,7 @@ jobs:
 
     - name: Upload release asset
       if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: ${{ matrix.asset_name }}
         path: release-assets/${{ matrix.asset_name }}
