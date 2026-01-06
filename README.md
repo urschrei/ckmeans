@@ -25,11 +25,23 @@ assert_eq!(result, expected);
 
 Ckmeans clustering is an improvement on 1-dimensional (univariate) heuristic-based clustering approaches such as [Jenks](https://en.wikipedia.org/wiki/Jenks_natural_breaks_optimization). The algorithm was developed by [Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf) (2011) as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach to the problem of clustering numeric data into groups with the least within-group sum-of-squared-deviations.
 
-Minimizing the difference within groups – what Wang & Song refer to as `withinss`, or within sum-of-squares – means that groups are optimally homogenous within and the data is split into representative groups. This is very useful for visualization, where one may wish to represent a continuous variable in discrete colour or style groups. This function can provide groups that emphasize differences between data.
+Minimising the difference within groups (what Wang & Song refer to as `withinss`, or within sum-of-squares) means that groups are optimally homogeneous within and the data is split into representative groups. This is very useful for visualisation, where one may wish to represent a continuous variable in discrete colour or style groups. This function can provide groups that emphasise differences between data.
 
-Being a dynamic approach, this algorithm is based on two matrices that store incrementally-computed values for squared deviations and backtracking indexes.
+## Data Types
 
-Unlike the [original implementation](https://cran.r-project.org/web/packages/Ckmeans.1d.dp/index.html), this implementation does not include any code to automatically determine the optimal number of clusters: this information needs to be explicitly provided. It **does** provide the `roundbreaks` method to aid labelling, however.
+While this library supports both integer and floating-point types, **`f64` is the recommended type** for most clustering use cases. Continuous data is the primary target for optimal clustering, and the implementation is optimised for floating-point performance. Integer types work but may see reduced performance due to algorithmic trade-offs that favour f64.
+
+## How It Works
+
+The algorithm fills two matrices using dynamic programming:
+- **S matrix**: stores the minimum within-cluster sum-of-squares for clustering the first `i` elements into `k` clusters
+- **J matrix**: stores backtracking indices to reconstruct the optimal cluster boundaries
+
+For each column `k` (number of clusters), the algorithm finds the optimal split point `j` for each position `i` by minimising `SSQ(j, i) + S[k-1][j-1]`, where `SSQ(j, i)` is the sum-of-squares for elements `j` to `i` (computed in O(1) using prefix sums).
+
+The key to linear-time performance is the SMAWK algorithm's monotonicity property: the optimal split point for position `i` is always >= the optimal split point for position `i-1`. This allows a divide-and-conquer approach that processes each column in O(n) time, giving O(kn) total complexity.
+
+Unlike the [original R implementation](https://cran.r-project.org/web/packages/Ckmeans.1d.dp/index.html), this implementation does not include any code to automatically determine the optimal number of clusters: this information needs to be explicitly provided. It **does** provide the `roundbreaks` method to aid labelling, however.
 
 # FFI
 A C-compatible FFI implementation is available, along with libraries for major platforms. See the [header file](include/header.h) and a basic C example in the [`examples`](examples) folder. The FFI functions have been verified not to leak memory (see comment in example).
@@ -38,19 +50,45 @@ A C-compatible FFI implementation is available, along with libraries for major p
 A WASM module is also available, giving access to both `ckmeans` and `roundbreaks`. Generate the module using [`wasm-bindgen`](https://rustwasm.github.io/docs/wasm-bindgen/) and the appropriate target, or use the [NPM package](https://www.npmjs.com/package/@urschrei/ckmeans).
 
 # Implementation
-This is a port (including documentation) of David Schnurr's package <https://github.com/schnerd/ckmeans>, incorporating some improvements from Bill Mill's Python + Numpy implementation at <https://github.com/llimllib/ckmeans>. The latest version switches to a flat array and a stack-based matrix population strategy (previously recursive), giving a 25 % speedup.
+
+This implementation builds on David Schnurr's JavaScript package (<https://github.com/schnerd/ckmeans>) and Bill Mill's Python + Numpy implementation (<https://github.com/llimllib/ckmeans>), with several key differences:
+
+| Feature | Schnurr / Mill | This Implementation |
+|---------|---------------|---------------------|
+| Matrix layout | Nested arrays | Flat contiguous array for cache locality |
+| Column filling | Recursive or iterative two-pointer | Stack-based divide-and-conquer with single-pass inner loop |
+| SSQ computation | Computed twice per candidate in two-pointer approach | Computed exactly once per candidate |
+| Memory allocation | Per-column stack allocation | Pre-allocated stack reused across columns |
+
+The single-pass inner loop is the most significant change: the original two-pointer approach computed `SSQ(j, i)` for both the high and low pointers in each iteration, effectively computing SSQ twice for each index in the search range. This implementation computes SSQ exactly once per index, which significantly benefits f64 performance where floating-point arithmetic dominates.
 
 # Performance
-On an M2 Pro, to produce 7 classes:
 
-1. 110k uniformly-distributed i32 values between 0 and 250: ~9 ms
-2. 110k normally-distributed f64 values with a mean of 3.0 and a standard deviation of 1.0: 32 ms
+On an M2 Pro, to produce 7 clusters from normally-distributed f64 data:
 
-## Profile-Guided Optimization (PGO)
-This library supports PGO builds for enhanced performance. PGO typically provides 10-30% performance improvements by optimizing hot paths based on real-world usage patterns.
+| Data Size | Time |
+|-----------|------|
+| 10,000 | 1.7 ms |
+| 50,000 | 9.9 ms |
+| 110,000 | 23 ms |
+| 500,000 | 115 ms |
+| 1,000,000 | 243 ms |
+
+Scaling with cluster count (110k f64 values):
+
+| Clusters (k) | Time |
+|--------------|------|
+| 3 | 9.6 ms |
+| 7 | 23 ms |
+| 15 | 47 ms |
+| 30 | 89 ms |
+| 50 | 138 ms |
+
+## Profile-Guided Optimisation (PGO)
+This library supports PGO builds for enhanced performance. PGO typically provides 10-30% performance improvements by optimising hot paths based on real-world usage patterns.
 
 ### Building with PGO
-To build an optimized version using PGO:
+To build an optimised version using PGO:
 
 ```bash
 # Run the automated PGO build script
@@ -61,9 +99,9 @@ chmod +x scripts/pgo-build.sh
 The script will:
 1. Build with instrumentation to collect profile data
 2. Run comprehensive training workloads (k=3 to 25)
-3. Build the final optimized binary using collected profiles
+3. Build the final optimised binary using collected profiles
 
-Optimized binaries will be available in `target/pgo-optimized/`.
+Optimised binaries will be available in `target/pgo-optimized/`.
 
 ### Using PGO in Production
 - For Rust projects: Use the `.rlib` file from `target/pgo-optimized/`
@@ -76,11 +114,11 @@ $O(kn)$. Other approaches such as Hilferink's [`CalcNaturalBreaks`](https://www.
 Wang and Song (2011) state that the algorithm runs in $O(k^2n)$ in their introduction. However, they have since updated their dynamic programming algorithm (see August 2016 note [here](https://github.com/cran/Ckmeans.1d.dp/blob/f7f2920fc9aabab184a2acff29e7965ce4f90173/src/Ckmeans.1d.dp.cpp#L91-L95)) which reduces the complexity to linear time. This approach has been used in the extant implementations listed above, and reproduced here.
 
 ## Possible Improvements
-### Perf
-We're not trying to leverage any of the fast linear algebra libraries that might be available if we used e.g. [`ndarray`](https://crates.io/crates/ndarray).
 
-### Tests
-Perhaps some property-based tests.
+- **SIMD**: The SSQ computation could potentially benefit from SIMD vectorisation
+- **Parallelisation**: Columns could be processed in parallel using rayon (though dependencies between columns limit this)
+- **Integer optimisation**: The current implementation favours f64; a separate code path with early-exit optimisation could improve integer performance
+- **Property-based tests**: Additional testing coverage
 
 # References
 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
