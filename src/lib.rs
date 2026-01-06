@@ -28,8 +28,8 @@
 //! assert_eq!(result, expected);
 //! ```
 
-use num_traits::cast::FromPrimitive;
 use num_traits::Float;
+use num_traits::cast::FromPrimitive;
 use num_traits::{Num, NumCast};
 use std::fmt::Debug;
 
@@ -37,7 +37,7 @@ use std::fmt::Debug;
 mod ffi;
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::ffi::{
-    ckmeans_ffi, drop_ckmeans_result, ExternalArray, InternalArray, WrapperArray,
+    ExternalArray, InternalArray, WrapperArray, ckmeans_ffi, drop_ckmeans_result,
 };
 mod wasm;
 pub use crate::wasm::{ckmeans_wasm, roundbreaks_wasm};
@@ -113,6 +113,7 @@ fn ssq<T: CkNum>(j: usize, i: usize, sumx: &[T], sumxsq: &[T]) -> Option<T> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fill_matrix_column<T: CkNum>(
     imin: usize,
     imax: usize,
@@ -121,15 +122,10 @@ fn fill_matrix_column<T: CkNum>(
     backtrack_matrix: &mut FlatMatrix<usize>,
     sumx: &[T],
     sumxsq: &[T],
+    stack: &mut Vec<(usize, usize)>,
 ) -> Option<()> {
-    // Stack to simulate recursion: (imin, imax)
-    // Maximum depth is log2(n) for binary tree traversal
-    let capacity = if imax > imin {
-        ((imax - imin + 1) as f64).log2().ceil() as usize + 1
-    } else {
-        1
-    };
-    let mut stack = Vec::with_capacity(capacity);
+    // Reuse the pre-allocated stack for divide-and-conquer traversal
+    stack.clear();
     stack.push((imin, imax));
 
     while let Some((imin, imax)) = stack.pop() {
@@ -139,38 +135,35 @@ fn fill_matrix_column<T: CkNum>(
 
         // Start at midpoint between imin and imax
         let i = imin + (imax - imin) / 2;
-        matrix.set(column, i, matrix.get(column - 1, i - 1));
-        backtrack_matrix.set(column, i, i);
+
+        // Compute SMAWK bounds for j
         let mut jlow = column;
         if imin > column {
-            jlow = (jlow).max(backtrack_matrix.get(column, imin - 1));
+            jlow = jlow.max(backtrack_matrix.get(column, imin - 1));
         }
-        jlow = (jlow).max(backtrack_matrix.get(column - 1, i));
-        let mut jhigh = i - 1; // the upper end for j
+        jlow = jlow.max(backtrack_matrix.get(column - 1, i));
+
+        let mut jhigh = i;
         if imax < matrix.cols - 1 {
             jhigh = jhigh.min(backtrack_matrix.get(column, imax + 1));
         }
-        for j in (jlow..=jhigh).rev() {
-            let sji = ssq(j, i, sumx, sumxsq)?;
-            if sji + matrix.get(column - 1, jlow - 1) >= matrix.get(column, i) {
-                break;
-            }
-            let sjlowi = ssq(jlow, i, sumx, sumxsq)?;
 
-            let ssqjlow = sjlowi + matrix.get(column - 1, jlow - 1);
-            if ssqjlow < matrix.get(column, i) {
-                // shrink the lower bound
-                matrix.set(column, i, ssqjlow);
-                backtrack_matrix.set(column, i, jlow);
-            }
-            jlow += 1;
+        // Find minimum cost split point with a single pass through the range.
+        // This computes ssq exactly once per j (the old two-pointer approach
+        // computed ssq twice for each index).
+        let mut best_j = jlow;
+        let mut best_cost = ssq(jlow, i, sumx, sumxsq)? + matrix.get(column - 1, jlow - 1);
 
-            let ssqj = sji + matrix.get(column - 1, j - 1);
-            if ssqj < matrix.get(column, i) {
-                matrix.set(column, i, ssqj);
-                backtrack_matrix.set(column, i, j);
+        for j in (jlow + 1)..=jhigh {
+            let cost = ssq(j, i, sumx, sumxsq)? + matrix.get(column - 1, j - 1);
+            if cost < best_cost {
+                best_cost = cost;
+                best_j = j;
             }
         }
+
+        matrix.set(column, i, best_cost);
+        backtrack_matrix.set(column, i, best_j);
 
         // Push right range first (so left is processed first when popped)
         if i < imax {
@@ -209,6 +202,12 @@ fn fill_matrices<T: CkNum>(
         matrix.set(0, i, ssq(0, i, &sumx, &sumxsq)?);
         backtrack_matrix.set(0, i, 0);
     }
+
+    // Pre-allocate stack for divide-and-conquer (reused across columns)
+    // Maximum depth is log2(n) + 1 for binary tree traversal
+    let stack_capacity = ((nvalues as f64).log2().ceil() as usize).max(1) + 1;
+    let mut stack = Vec::with_capacity(stack_capacity);
+
     for k in 1..nclusters {
         let imin = if k < nclusters {
             k.max(1)
@@ -224,6 +223,7 @@ fn fill_matrices<T: CkNum>(
             backtrack_matrix,
             &sumx,
             &sumxsq,
+            &mut stack,
         )?;
     }
     Some(())
