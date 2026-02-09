@@ -24,7 +24,7 @@ wasm-bindgen = "0.2"
 
 [dev-dependencies]
 criterion = "0.7.0"
-rand = "0.9.1"
+rand = "0.10.0"
 rand_distr = "0.5.1"
 
 [build-dependencies]
