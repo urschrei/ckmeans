@@ -3,7 +3,7 @@ extern crate criterion;
 
 use ckmeans::ckmeans;
 use criterion::{BenchmarkId, Criterion};
-use rand::Rng;
+use rand::RngExt;
 use rand_distr::{Distribution, Normal, Uniform};
 use std::hint::black_box;
 

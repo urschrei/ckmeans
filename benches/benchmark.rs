@@ -3,7 +3,7 @@ extern crate criterion;
 extern crate ckmeans;
 extern crate rand;
 
-use rand::Rng;
+use rand::RngExt;
 use rand_distr::Normal;
 use rand_distr::Uniform;
 use std::hint::black_box;
