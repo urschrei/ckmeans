@@ -1,11 +1,25 @@
 version: 2
 updates:
-- package-ecosystem: cargo
-  directory: "/"
-  schedule:
-    interval: weekly
-
-- package-ecosystem: "github-actions"
-  directory: "/"
-  schedule:
-    interval: "weekly"
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 20
+    groups:
+      # Specify a name for the group, which will be used in pull request titles
+      # and branch names
+      cargo-dependencies:
+        # Define patterns to include dependencies in the group (based on
+        # dependency name)
+        applies-to: version-updates # Applies the group rule to version updates
+        patterns:
+          - "*"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      gha-updates:
+        applies-to: version-updates # Applies the group rule to version updates
+        patterns:
+          - "*"
