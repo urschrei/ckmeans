@@ -9,6 +9,7 @@ pub enum CkmeansErr {
     LowWindowError,
     HighWindowError,
     InfallibleError,
+    InvalidRangeError,
 }
 
 impl Display for CkmeansErr {
@@ -34,6 +35,9 @@ impl Display for CkmeansErr {
             }
             CkmeansErr::InfallibleError => {
                 write!(f, "An infallible numeric conversion failed")
+            }
+            CkmeansErr::InvalidRangeError => {
+                write!(f, "k_min must be less than or equal to k_max")
             }
         }
     }

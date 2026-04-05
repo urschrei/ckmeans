@@ -40,7 +40,7 @@ pub use crate::ffi::{
     ExternalArray, InternalArray, WrapperArray, ckmeans_ffi, drop_ckmeans_result,
 };
 mod wasm;
-pub use crate::wasm::{ckmeans_wasm, roundbreaks_wasm};
+pub use crate::wasm::{ckmeans_optimal_wasm, ckmeans_wasm, roundbreaks_wasm};
 
 mod errors;
 pub use crate::errors::CkmeansErr;
@@ -51,6 +51,31 @@ pub type ClusterIndices<T> = (Vec<T>, Vec<(usize, usize)>);
 /// A trait that encompasses most common numeric types (integer **and** floating point)
 pub trait CkNum: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug {}
 impl<T: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug> CkNum for T {}
+
+/// Per-cluster statistics returned by [`ckmeans_optimal`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClusterStats<T> {
+    /// Mean value of the cluster.
+    pub center: T,
+    /// Number of elements in the cluster.
+    pub size: usize,
+    /// Within-cluster sum of squares.
+    pub withinss: T,
+}
+
+/// Result of [`ckmeans_optimal`], containing the clustering, the chosen k,
+/// BIC values for each candidate k, and per-cluster statistics.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CkmeansResult<T> {
+    /// Clustered data, same format as [`ckmeans`] output.
+    pub clusters: Vec<Vec<T>>,
+    /// The chosen number of clusters.
+    pub k: u8,
+    /// BIC value for each candidate k evaluated, as `(k, bic)` pairs.
+    pub bic: Vec<(u8, T)>,
+    /// Per-cluster statistics for the chosen clustering.
+    pub stats: Vec<ClusterStats<T>>,
+}
 
 /// return a sorted **copy** of the input. Will blow up in the presence of NaN
 fn numeric_sort<T: CkNum>(arr: &[T]) -> Vec<T> {
@@ -229,6 +254,78 @@ fn fill_matrices<T: CkNum>(
     Some(())
 }
 
+/// Compute per-cluster statistics (center, size, withinss) for a set of clusters.
+fn compute_cluster_stats<T: CkNum>(clusters: &[Vec<T>]) -> Option<Vec<ClusterStats<T>>> {
+    clusters
+        .iter()
+        .map(|cluster| {
+            let size = cluster.len();
+            let n = T::from_usize(size)?;
+            let sum: T = cluster.iter().copied().fold(T::zero(), |acc, x| acc + x);
+            let center = sum / n;
+            let withinss = cluster
+                .iter()
+                .copied()
+                .fold(T::zero(), |acc, x| acc + (x - center) * (x - center));
+            Some(ClusterStats {
+                center,
+                size,
+                withinss,
+            })
+        })
+        .collect()
+}
+
+/// Compute the BIC for a clustering result under a Gaussian mixture model.
+///
+/// Following Song & Zhong (2020):
+/// - Log-likelihood per cluster j: -n_j/2 * ln(2*pi) - n_j/2 * ln(sigma_j^2) - (n_j - 1)/2
+/// - For singleton clusters (n_j = 1), sigma_j^2 = total_variance / n
+/// - Number of parameters: p = 3k - 1
+/// - BIC = -2 * log(L) + p * ln(n)
+fn compute_bic<T: CkNum + Float>(
+    stats: &[ClusterStats<T>],
+    n: usize,
+    total_variance: T,
+) -> Option<T> {
+    let k = stats.len();
+    let n_t = T::from_usize(n)?;
+    let two = T::from_f64(2.0)?;
+    let two_pi = T::from_f64(std::f64::consts::TAU)?;
+    let ln_two_pi = two_pi.ln();
+
+    // Fallback variance for singleton clusters
+    let singleton_var = total_variance / n_t;
+
+    let mut log_likelihood = T::zero();
+
+    for stat in stats {
+        let n_j = T::from_usize(stat.size)?;
+        let sigma_sq = if stat.size <= 1 {
+            singleton_var
+        } else {
+            stat.withinss / n_j
+        };
+
+        // Guard against zero variance (all identical values in cluster)
+        if sigma_sq <= T::zero() {
+            // Perfectly homogeneous cluster -- skip the variance penalty.
+            // Only the constant terms contribute.
+            log_likelihood = log_likelihood - n_j / two * ln_two_pi;
+        } else {
+            log_likelihood = log_likelihood
+                - n_j / two * ln_two_pi
+                - n_j / two * sigma_sq.ln()
+                - (n_j - T::one()) / two;
+        }
+    }
+
+    // p = 3k - 1: k means + k variances + (k-1) mixing proportions
+    let p = T::from_usize(3 * k - 1)?;
+    let bic = -two * log_likelihood + p * n_t.ln();
+    Some(bic)
+}
+
 /// Minimizing the difference within groups – what Wang & Song refer to as
 /// `withinss`, or within sum-of-squares, means that groups are **optimally
 /// homogenous** within and the data is split into representative groups.
@@ -240,10 +337,8 @@ fn fill_matrices<T: CkNum>(
 /// store incrementally-computed values for squared deviations and backtracking
 /// indexes.
 ///
-/// Unlike the [original implementation](https://cran.r-project.org/web/packages/Ckmeans.1d.dp/index.html),
-/// this implementation does not include any code to automatically determine
-/// the optimal number of clusters: this information needs to be explicitly
-/// provided.
+/// If you do not know the optimal number of clusters, use [`ckmeans_optimal`]
+/// which evaluates candidates using the Bayesian Information Criterion (BIC).
 ///
 /// # Notes
 /// Most common numeric (integer or floating point) types can be clustered
@@ -283,6 +378,104 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
         clusters.push(cluster);
     }
     Ok(clusters)
+}
+
+/// Determine the optimal number of clusters using the Bayesian Information
+/// Criterion (BIC) and return the clustering result with per-cluster statistics.
+///
+/// This follows the approach of Song & Zhong (2020), evaluating each candidate k
+/// in the range `k_min..=k_max` and selecting the k that minimises BIC.
+///
+/// # Arguments
+/// * `data` - The input data to cluster
+/// * `k_min` - Minimum number of clusters to evaluate (default: 1)
+/// * `k_max` - Maximum number of clusters to evaluate (default: 9)
+///
+/// # References
+/// 1. Song, M., & Zhong, H. (2020). Efficient weighted univariate clustering maps
+///    outstanding dysregulated genomic zones in human cancers. Bioinformatics, 36(20), 5027-5036.
+///
+/// # Example
+///
+/// ```
+/// use ckmeans::ckmeans_optimal;
+///
+/// let data = vec![1.0, 1.0, 1.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0];
+/// let result = ckmeans_optimal(&data, None, None).unwrap();
+/// assert_eq!(result.k, 3);
+/// ```
+pub fn ckmeans_optimal<T: CkNum + Float>(
+    data: &[T],
+    k_min: Option<u8>,
+    k_max: Option<u8>,
+) -> Result<CkmeansResult<T>, CkmeansErr> {
+    let k_min = k_min.unwrap_or(1);
+    let k_max = k_max.unwrap_or(9);
+
+    if k_min == 0 {
+        return Err(CkmeansErr::TooFewClassesError);
+    }
+    if k_min > k_max {
+        return Err(CkmeansErr::InvalidRangeError);
+    }
+    if (k_min as usize) > data.len() {
+        return Err(CkmeansErr::TooManyClassesError);
+    }
+
+    // Cap k_max to data length
+    let k_max = k_max.min(data.len() as u8);
+
+    // Check for all-identical values
+    let sorted = numeric_sort(data);
+    if sorted.first() == sorted.last() {
+        let stats = compute_cluster_stats(std::slice::from_ref(&sorted))
+            .ok_or(CkmeansErr::ConversionError)?;
+        return Ok(CkmeansResult {
+            clusters: vec![sorted],
+            k: 1,
+            bic: vec![(1, T::zero())],
+            stats,
+        });
+    }
+
+    // Compute total variance for singleton cluster fallback in BIC
+    let n = data.len();
+    let n_t = T::from_usize(n).ok_or(CkmeansErr::ConversionError)?;
+    let sum: T = data.iter().copied().fold(T::zero(), |acc, x| acc + x);
+    let mean = sum / n_t;
+    let total_variance = data
+        .iter()
+        .copied()
+        .fold(T::zero(), |acc, x| acc + (x - mean) * (x - mean))
+        / n_t;
+
+    let mut best_k: u8 = k_min;
+    let mut best_bic = T::infinity();
+    let mut best_clusters: Vec<Vec<T>> = Vec::new();
+    let mut best_stats: Vec<ClusterStats<T>> = Vec::new();
+    let mut all_bics: Vec<(u8, T)> = Vec::with_capacity((k_max - k_min + 1) as usize);
+
+    for k in k_min..=k_max {
+        let clusters = ckmeans(data, k)?;
+        let stats = compute_cluster_stats(&clusters).ok_or(CkmeansErr::ConversionError)?;
+        let bic = compute_bic(&stats, n, total_variance).ok_or(CkmeansErr::ConversionError)?;
+
+        all_bics.push((k, bic));
+
+        if bic < best_bic {
+            best_bic = bic;
+            best_k = k;
+            best_clusters = clusters;
+            best_stats = stats;
+        }
+    }
+
+    Ok(CkmeansResult {
+        clusters: best_clusters,
+        k: best_k,
+        bic: all_bics,
+        stats: best_stats,
+    })
 }
 
 /// Cluster data and return the sorted data with cluster index ranges.
@@ -683,5 +876,146 @@ mod tests {
         let expected = vec![2.43, 3.5];
         let res = roundbreaks(&numbers, 3).unwrap();
         assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_compute_bic() {
+        // 3 clusters from 9 data points
+        let stats = vec![
+            ClusterStats {
+                center: 2.0,
+                size: 3,
+                withinss: 2.0,
+            },
+            ClusterStats {
+                center: 15.0,
+                size: 2,
+                withinss: 50.0,
+            },
+            ClusterStats {
+                center: 80.0,
+                size: 4,
+                withinss: 8.0,
+            },
+        ];
+        let n: usize = 9;
+        let total_variance: f64 = 100.0;
+        let bic = compute_bic(&stats, n, total_variance);
+        assert!(bic.is_some());
+        // BIC should be a finite number
+        assert!(bic.unwrap().is_finite());
+    }
+
+    #[test]
+    fn test_compute_bic_singleton_cluster() {
+        // Singleton cluster should not produce NaN or infinity
+        let stats = vec![
+            ClusterStats {
+                center: 1.0,
+                size: 1,
+                withinss: 0.0,
+            },
+            ClusterStats {
+                center: 10.0,
+                size: 5,
+                withinss: 20.0,
+            },
+        ];
+        let n: usize = 6;
+        let total_variance: f64 = 50.0;
+        let bic = compute_bic(&stats, n, total_variance);
+        assert!(bic.is_some());
+        assert!(bic.unwrap().is_finite());
+    }
+
+    #[test]
+    fn test_compute_cluster_stats() {
+        let clusters = vec![vec![1.0, 2.0, 3.0], vec![10.0, 20.0]];
+        let stats = compute_cluster_stats(&clusters).unwrap();
+        assert_eq!(stats.len(), 2);
+        // Cluster [1, 2, 3]: center = 2.0, size = 3, withinss = (1-2)^2 + (2-2)^2 + (3-2)^2 = 2.0
+        assert_eq!(stats[0].center, 2.0);
+        assert_eq!(stats[0].size, 3);
+        assert!((stats[0].withinss - 2.0).abs() < 1e-10);
+        // Cluster [10, 20]: center = 15.0, size = 2, withinss = (10-15)^2 + (20-15)^2 = 50.0
+        assert_eq!(stats[1].center, 15.0);
+        assert_eq!(stats[1].size, 2);
+        assert!((stats[1].withinss - 50.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_ckmeans_optimal_well_separated() {
+        // Three obvious clusters
+        let data = vec![1.0, 1.0, 1.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0];
+        let result = ckmeans_optimal(&data, None, None).unwrap();
+        assert_eq!(result.k, 3);
+        assert_eq!(result.clusters.len(), 3);
+        assert_eq!(result.stats.len(), 3);
+        // BIC should have entries for k=1 through k=9
+        assert_eq!(result.bic.len(), 9);
+    }
+
+    #[test]
+    fn test_ckmeans_optimal_single_element() {
+        let data = vec![42.0];
+        let result = ckmeans_optimal(&data, Some(1), Some(1)).unwrap();
+        assert_eq!(result.k, 1);
+        assert_eq!(result.clusters, vec![vec![42.0]]);
+        assert_eq!(result.stats[0].size, 1);
+        assert_eq!(result.stats[0].center, 42.0);
+    }
+
+    #[test]
+    fn test_ckmeans_optimal_all_identical() {
+        let data = vec![5.0, 5.0, 5.0, 5.0, 5.0];
+        let result = ckmeans_optimal(&data, None, None).unwrap();
+        assert_eq!(result.k, 1);
+        assert_eq!(result.clusters.len(), 1);
+    }
+
+    #[test]
+    fn test_ckmeans_optimal_k_min_equals_k_max() {
+        // Should behave like regular ckmeans
+        let data = vec![1.0, 2.0, 3.0, 10.0, 20.0, 30.0];
+        let result = ckmeans_optimal(&data, Some(2), Some(2)).unwrap();
+        assert_eq!(result.k, 2);
+        let direct = ckmeans(&data, 2).unwrap();
+        assert_eq!(result.clusters, direct);
+    }
+
+    #[test]
+    fn test_ckmeans_optimal_k_max_capped() {
+        // k_max larger than data length should be silently capped
+        let data = vec![1.0, 2.0, 3.0];
+        let result = ckmeans_optimal(&data, Some(1), Some(100)).unwrap();
+        // Should not error; BIC entries should go up to 3 (data length), not 100
+        assert_eq!(result.bic.len(), 3);
+    }
+
+    #[test]
+    fn test_ckmeans_optimal_invalid_range() {
+        let data = vec![1.0, 2.0, 3.0];
+        let result = ckmeans_optimal(&data, Some(5), Some(2));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ckmeans_optimal_k_min_zero() {
+        let data = vec![1.0, 2.0, 3.0];
+        let result = ckmeans_optimal(&data, Some(0), Some(3));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ckmeans_optimal_stats_correctness() {
+        let data = vec![1.0, 2.0, 3.0, 100.0, 101.0, 102.0];
+        let result = ckmeans_optimal(&data, Some(2), Some(2)).unwrap();
+        assert_eq!(result.stats.len(), 2);
+        // First cluster [1, 2, 3]: center = 2.0, size = 3
+        assert_eq!(result.stats[0].center, 2.0);
+        assert_eq!(result.stats[0].size, 3);
+        // Second cluster [100, 101, 102]: center = 101.0, size = 3
+        assert_eq!(result.stats[1].center, 101.0);
+        assert_eq!(result.stats[1].size, 3);
     }
 }

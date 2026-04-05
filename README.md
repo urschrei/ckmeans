@@ -23,6 +23,22 @@ let result = ckmeans(&input, 3).unwrap();
 assert_eq!(result, expected);
 ```
 
+## Optimal k Selection
+
+If you don't know the optimal number of clusters in advance, `ckmeans_optimal` can determine it
+automatically using the Bayesian Information Criterion (BIC), following Song & Zhong (2020):
+
+```rust
+use ckmeans::ckmeans_optimal;
+
+let data = vec![1.0, 1.0, 1.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0];
+let result = ckmeans_optimal(&data, None, None).unwrap();
+// result.k == 3 (optimal number of clusters)
+// result.clusters contains the three clusters
+// result.stats contains per-cluster center, size, and within-cluster sum of squares
+// result.bic contains BIC values for each candidate k (default range: 1..=9)
+```
+
 Ckmeans clustering is an improvement on 1-dimensional (univariate) heuristic-based clustering approaches such as [Jenks](https://en.wikipedia.org/wiki/Jenks_natural_breaks_optimization). The algorithm was developed by [Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf) (2011) as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach to the problem of clustering numeric data into groups with the least within-group sum-of-squared-deviations.
 
 Minimising the difference within groups (what Wang & Song refer to as `withinss`, or within sum-of-squares) means that groups are optimally homogeneous within and the data is split into representative groups. This is very useful for visualisation, where one may wish to represent a continuous variable in discrete colour or style groups. This function can provide groups that emphasise differences between data.
@@ -41,7 +57,7 @@ For each column `k` (number of clusters), the algorithm finds the optimal split 
 
 The key to linear-time performance is the SMAWK algorithm's monotonicity property: the optimal split point for position `i` is always >= the optimal split point for position `i-1`. This allows a divide-and-conquer approach that processes each column in O(n) time, giving O(kn) total complexity.
 
-Unlike the [original R implementation](https://cran.r-project.org/web/packages/Ckmeans.1d.dp/index.html), this implementation does not include any code to automatically determine the optimal number of clusters: this information needs to be explicitly provided. It **does** provide the `roundbreaks` method to aid labelling, however.
+Like the [original R implementation](https://cran.r-project.org/web/packages/Ckmeans.1d.dp/index.html), this implementation can automatically determine the optimal number of clusters using `ckmeans_optimal`, which evaluates candidates using the Bayesian Information Criterion (BIC). It also provides the `roundbreaks` method to aid labelling.
 
 # FFI
 A C-compatible FFI implementation is available, along with libraries for major platforms. See the [header file](include/header.h) and a basic C example in the [`examples`](examples) folder. The FFI functions have been verified not to leak memory (see comment in example).
