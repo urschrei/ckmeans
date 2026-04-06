@@ -118,6 +118,10 @@ jobs:
         RUSTFLAGS="-Cprofile-use=$PWD/target/pgo-profiles/merged.profdata" \
           cargo build --profile pgo-use
 
+        # Copy to pgo-optimized (matching Unix script output)
+        mkdir -p target/pgo-optimized
+        cp target/pgo-use/ckmeans* target/pgo-optimized/ 2>/dev/null || true
+
     - name: Run benchmarks
       shell: bash
       run: |
