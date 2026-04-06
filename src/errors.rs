@@ -1,4 +1,5 @@
-use std::{convert::Infallible, fmt::Display};
+use std::convert::Infallible;
+use std::fmt::Display;
 
 /// Ckmeans Errors
 #[derive(Debug)]
