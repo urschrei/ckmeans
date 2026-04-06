@@ -286,7 +286,7 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
 /// let input = vec![1.0, 12.0, 13.0, 2.0, 3.0, 5.0, 82.0, 78.0];
 /// let (sorted, indices) = ckmeans_indices(&input, 3).unwrap();
 /// // sorted contains all values in sorted order
-/// // indices contains [(0, 4), (5, 6), (7, 7)] representing the three clusters
+/// // indices contains [(0, 3), (4, 5), (6, 7)] representing the three clusters
 /// ```
 pub fn ckmeans_indices<T: CkNum>(
     data: &[T],

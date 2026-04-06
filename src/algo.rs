@@ -160,12 +160,7 @@ pub(crate) fn fill_matrices<T: CkNum>(
     let mut stack = Vec::with_capacity(stack_capacity);
 
     for k in 1..nclusters {
-        let imin = if k < nclusters {
-            k.max(1)
-        } else {
-            // No need to compute matrix[k - 1][0] ... matrix[k - 1][n - 2]
-            nvalues - 1
-        };
+        let imin = k.max(1);
         fill_matrix_column(
             imin,
             nvalues - 1,
