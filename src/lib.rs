@@ -63,6 +63,41 @@ pub struct ClusterStats<T> {
     pub withinss: T,
 }
 
+/// Configuration for [`ckmeans_optimal`].
+///
+/// The default evaluates k = 1 through 9:
+///
+/// | Field   | Default |
+/// |---------|---------|
+/// | `k_min` | 1       |
+/// | `k_max` | 9       |
+///
+/// # Example
+/// ```
+/// use ckmeans::CkmeansConfig;
+///
+/// // Use defaults: evaluates k = 1..=9
+/// let config = CkmeansConfig::default();
+/// assert_eq!(config.k_min, 1);
+/// assert_eq!(config.k_max, 9);
+///
+/// // Custom range: evaluates k = 2..=15
+/// let config = CkmeansConfig { k_min: 2, k_max: 15, ..Default::default() };
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CkmeansConfig {
+    /// Minimum number of clusters to evaluate. Default: **1**.
+    pub k_min: u8,
+    /// Maximum number of clusters to evaluate. Default: **9**.
+    pub k_max: u8,
+}
+
+impl Default for CkmeansConfig {
+    fn default() -> Self {
+        Self { k_min: 1, k_max: 9 }
+    }
+}
+
 /// Result of [`ckmeans_optimal`], containing the clustering, the chosen k,
 /// BIC values for each candidate k, and per-cluster statistics.
 #[derive(Debug, Clone, PartialEq)]
@@ -388,8 +423,8 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
 ///
 /// # Arguments
 /// * `data` - The input data to cluster
-/// * `k_min` - Minimum number of clusters to evaluate (default: 1)
-/// * `k_max` - Maximum number of clusters to evaluate (default: 9)
+/// * `config` - Clustering configuration; use [`CkmeansConfig::default()`] for defaults
+///   (k = 1..=9)
 ///
 /// # References
 /// 1. Song, M., & Zhong, H. (2020). Efficient weighted univariate clustering maps
@@ -398,19 +433,18 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
 /// # Example
 ///
 /// ```
-/// use ckmeans::ckmeans_optimal;
+/// use ckmeans::{ckmeans_optimal, CkmeansConfig};
 ///
 /// let data = vec![1.0, 1.0, 1.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0];
-/// let result = ckmeans_optimal(&data, None, None).unwrap();
+/// let result = ckmeans_optimal(&data, CkmeansConfig::default()).unwrap();
 /// assert_eq!(result.k, 3);
 /// ```
 pub fn ckmeans_optimal<T: CkNum + Float>(
     data: &[T],
-    k_min: Option<u8>,
-    k_max: Option<u8>,
+    config: CkmeansConfig,
 ) -> Result<CkmeansResult<T>, CkmeansErr> {
-    let k_min = k_min.unwrap_or(1);
-    let k_max = k_max.unwrap_or(9);
+    let k_min = config.k_min;
+    let k_max = config.k_max;
 
     if k_min == 0 {
         return Err(CkmeansErr::TooFewClassesError);
@@ -947,7 +981,7 @@ mod tests {
     fn test_ckmeans_optimal_well_separated() {
         // Three obvious clusters
         let data = vec![1.0, 1.0, 1.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0];
-        let result = ckmeans_optimal(&data, None, None).unwrap();
+        let result = ckmeans_optimal(&data, CkmeansConfig::default()).unwrap();
         assert_eq!(result.k, 3);
         assert_eq!(result.clusters.len(), 3);
         assert_eq!(result.stats.len(), 3);
@@ -958,7 +992,15 @@ mod tests {
     #[test]
     fn test_ckmeans_optimal_single_element() {
         let data = vec![42.0];
-        let result = ckmeans_optimal(&data, Some(1), Some(1)).unwrap();
+        let result = ckmeans_optimal(
+            &data,
+            CkmeansConfig {
+                k_min: 1,
+                k_max: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(result.k, 1);
         assert_eq!(result.clusters, vec![vec![42.0]]);
         assert_eq!(result.stats[0].size, 1);
@@ -968,7 +1010,7 @@ mod tests {
     #[test]
     fn test_ckmeans_optimal_all_identical() {
         let data = vec![5.0, 5.0, 5.0, 5.0, 5.0];
-        let result = ckmeans_optimal(&data, None, None).unwrap();
+        let result = ckmeans_optimal(&data, CkmeansConfig::default()).unwrap();
         assert_eq!(result.k, 1);
         assert_eq!(result.clusters.len(), 1);
     }
@@ -977,7 +1019,15 @@ mod tests {
     fn test_ckmeans_optimal_k_min_equals_k_max() {
         // Should behave like regular ckmeans
         let data = vec![1.0, 2.0, 3.0, 10.0, 20.0, 30.0];
-        let result = ckmeans_optimal(&data, Some(2), Some(2)).unwrap();
+        let result = ckmeans_optimal(
+            &data,
+            CkmeansConfig {
+                k_min: 2,
+                k_max: 2,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(result.k, 2);
         let direct = ckmeans(&data, 2).unwrap();
         assert_eq!(result.clusters, direct);
@@ -987,7 +1037,15 @@ mod tests {
     fn test_ckmeans_optimal_k_max_capped() {
         // k_max larger than data length should be silently capped
         let data = vec![1.0, 2.0, 3.0];
-        let result = ckmeans_optimal(&data, Some(1), Some(100)).unwrap();
+        let result = ckmeans_optimal(
+            &data,
+            CkmeansConfig {
+                k_min: 1,
+                k_max: 100,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         // Should not error; BIC entries should go up to 3 (data length), not 100
         assert_eq!(result.bic.len(), 3);
     }
@@ -995,21 +1053,43 @@ mod tests {
     #[test]
     fn test_ckmeans_optimal_invalid_range() {
         let data = vec![1.0, 2.0, 3.0];
-        let result = ckmeans_optimal(&data, Some(5), Some(2));
+        let result = ckmeans_optimal(
+            &data,
+            CkmeansConfig {
+                k_min: 5,
+                k_max: 2,
+                ..Default::default()
+            },
+        );
         assert!(result.is_err());
     }
 
     #[test]
     fn test_ckmeans_optimal_k_min_zero() {
         let data = vec![1.0, 2.0, 3.0];
-        let result = ckmeans_optimal(&data, Some(0), Some(3));
+        let result = ckmeans_optimal(
+            &data,
+            CkmeansConfig {
+                k_min: 0,
+                k_max: 3,
+                ..Default::default()
+            },
+        );
         assert!(result.is_err());
     }
 
     #[test]
     fn test_ckmeans_optimal_stats_correctness() {
         let data = vec![1.0, 2.0, 3.0, 100.0, 101.0, 102.0];
-        let result = ckmeans_optimal(&data, Some(2), Some(2)).unwrap();
+        let result = ckmeans_optimal(
+            &data,
+            CkmeansConfig {
+                k_min: 2,
+                k_max: 2,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(result.stats.len(), 2);
         // First cluster [1, 2, 3]: center = 2.0, size = 3
         assert_eq!(result.stats[0].center, 2.0);

@@ -1,3 +1,4 @@
+use crate::CkmeansConfig;
 use crate::ckmeans;
 use crate::ckmeans_optimal;
 use crate::roundbreaks;
@@ -40,7 +41,11 @@ pub fn ckmeans_optimal_wasm(
     k_min: Option<u8>,
     k_max: Option<u8>,
 ) -> Result<JsValue, JsError> {
-    let result = ckmeans_optimal(data, k_min, k_max)?;
+    let config = CkmeansConfig {
+        k_min: k_min.unwrap_or(1),
+        k_max: k_max.unwrap_or(9),
+    };
+    let result = ckmeans_optimal(data, config)?;
     let obj = Object::new();
 
     // clusters: Array of Float64Arrays

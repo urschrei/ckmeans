@@ -29,14 +29,15 @@ If you don't know the optimal number of clusters in advance, `ckmeans_optimal` c
 automatically using the Bayesian Information Criterion (BIC), following Song & Zhong (2020):
 
 ```rust
-use ckmeans::ckmeans_optimal;
+use ckmeans::{ckmeans_optimal, CkmeansConfig};
 
 let data = vec![1.0, 1.0, 1.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0];
-let result = ckmeans_optimal(&data, None, None).unwrap();
+// CkmeansConfig::default() evaluates k = 1..=9
+let result = ckmeans_optimal(&data, CkmeansConfig::default()).unwrap();
 // result.k == 3 (optimal number of clusters)
 // result.clusters contains the three clusters
-// result.stats contains per-cluster center, size, and within-cluster sum of squares
-// result.bic contains BIC values for each candidate k (default range: 1..=9)
+// result.stats contains per-cluster centre, size, and within-cluster sum of squares
+// result.bic contains BIC values for each candidate k
 ```
 
 Ckmeans clustering is an improvement on 1-dimensional (univariate) heuristic-based clustering approaches such as [Jenks](https://en.wikipedia.org/wiki/Jenks_natural_breaks_optimization). The algorithm was developed by [Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf) (2011) as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach to the problem of clustering numeric data into groups with the least within-group sum-of-squared-deviations.
