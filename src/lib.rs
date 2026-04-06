@@ -29,28 +29,38 @@
 //! ```
 
 use num_traits::Float;
+use num_traits::Num;
+use num_traits::NumCast;
 use num_traits::cast::FromPrimitive;
-use num_traits::{Num, NumCast};
 use std::fmt::Debug;
 
+mod algo;
+mod errors;
 #[cfg(not(target_arch = "wasm32"))]
 mod ffi;
-#[cfg(not(target_arch = "wasm32"))]
-pub use crate::ffi::{
-    ExternalArray, InternalArray, WrapperArray, ckmeans_ffi, drop_ckmeans_result,
-};
 mod wasm;
-pub use crate::wasm::{ckmeans_optimal_wasm, ckmeans_wasm, roundbreaks_wasm};
 
-mod errors;
 pub use crate::errors::CkmeansErr;
-
-/// Result type for ckmeans_indices: (sorted_data, cluster_ranges)
-pub type ClusterIndices<T> = (Vec<T>, Vec<(usize, usize)>);
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::ffi::ExternalArray;
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::ffi::InternalArray;
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::ffi::WrapperArray;
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::ffi::ckmeans_ffi;
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::ffi::drop_ckmeans_result;
+pub use crate::wasm::ckmeans_optimal_wasm;
+pub use crate::wasm::ckmeans_wasm;
+pub use crate::wasm::roundbreaks_wasm;
 
 /// A trait that encompasses most common numeric types (integer **and** floating point)
 pub trait CkNum: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug {}
 impl<T: Num + Copy + NumCast + PartialOrd + FromPrimitive + Debug> CkNum for T {}
+
+/// Result type for ckmeans_indices: (sorted_data, cluster_ranges)
+pub type ClusterIndices<T> = (Vec<T>, Vec<(usize, usize)>);
 
 /// Per-cluster statistics returned by [`ckmeans_optimal`].
 #[derive(Debug, Clone, PartialEq)]
@@ -112,253 +122,102 @@ pub struct CkmeansResult<T> {
     pub stats: Vec<ClusterStats<T>>,
 }
 
-/// return a sorted **copy** of the input. Will blow up in the presence of NaN
-fn numeric_sort<T: CkNum>(arr: &[T]) -> Vec<T> {
-    let mut xs = arr.to_vec();
-    xs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-    xs
-}
-
-/// Assumes sorted input (so be sure only to use on `numeric_sort` output!)
-fn unique_count_sorted<T: CkNum>(input: &mut [T]) -> usize {
-    if input.is_empty() {
-        0
-    } else {
-        1 + input.windows(2).filter(|win| win[0] != win[1]).count()
-    }
-}
-
-/// Flat matrix structure for better cache locality
-struct FlatMatrix<T> {
-    data: Vec<T>,
-    rows: usize,
-    cols: usize,
-}
-
-impl<T: CkNum> FlatMatrix<T> {
-    fn new(rows: usize, cols: usize) -> Self {
-        Self {
-            data: vec![T::zero(); rows * cols],
-            rows,
-            cols,
-        }
-    }
-
-    #[inline]
-    fn get(&self, row: usize, col: usize) -> T {
-        self.data[row * self.cols + col]
-    }
-
-    #[inline]
-    fn set(&mut self, row: usize, col: usize, value: T) {
-        self.data[row * self.cols + col] = value;
-    }
-}
-
-#[inline(always)]
-fn ssq<T: CkNum>(j: usize, i: usize, sumx: &[T], sumxsq: &[T]) -> Option<T> {
-    let n = T::from_usize(i - j + 1)?;
-    let sji = if j > 0 {
-        let sum_diff = sumx[i] - sumx[j - 1];
-        let muji = sum_diff / n;
-        sumxsq[i] - sumxsq[j - 1] - n * muji * muji
-    } else {
-        let n_plus_one = T::from_usize(i + 1)?;
-        sumxsq[i] - (sumx[i] * sumx[i]) / n_plus_one
-    };
-    if sji < T::zero() {
-        Some(T::zero())
-    } else {
-        Some(sji)
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn fill_matrix_column<T: CkNum>(
-    imin: usize,
-    imax: usize,
-    column: usize,
-    matrix: &mut FlatMatrix<T>,
-    backtrack_matrix: &mut FlatMatrix<usize>,
-    sumx: &[T],
-    sumxsq: &[T],
-    stack: &mut Vec<(usize, usize)>,
-) -> Option<()> {
-    // Reuse the pre-allocated stack for divide-and-conquer traversal
-    stack.clear();
-    stack.push((imin, imax));
-
-    while let Some((imin, imax)) = stack.pop() {
-        if imin > imax {
-            continue;
-        }
-
-        // Start at midpoint between imin and imax
-        let i = imin + (imax - imin) / 2;
-
-        // Compute SMAWK bounds for j
-        let mut jlow = column;
-        if imin > column {
-            jlow = jlow.max(backtrack_matrix.get(column, imin - 1));
-        }
-        jlow = jlow.max(backtrack_matrix.get(column - 1, i));
-
-        let mut jhigh = i;
-        if imax < matrix.cols - 1 {
-            jhigh = jhigh.min(backtrack_matrix.get(column, imax + 1));
-        }
-
-        // Find minimum cost split point with a single pass through the range.
-        // This computes ssq exactly once per j (the old two-pointer approach
-        // computed ssq twice for each index).
-        let mut best_j = jlow;
-        let mut best_cost = ssq(jlow, i, sumx, sumxsq)? + matrix.get(column - 1, jlow - 1);
-
-        for j in (jlow + 1)..=jhigh {
-            let cost = ssq(j, i, sumx, sumxsq)? + matrix.get(column - 1, j - 1);
-            if cost < best_cost {
-                best_cost = cost;
-                best_j = j;
-            }
-        }
-
-        matrix.set(column, i, best_cost);
-        backtrack_matrix.set(column, i, best_j);
-
-        // Push right range first (so left is processed first when popped)
-        if i < imax {
-            stack.push((i + 1, imax));
-        }
-        if imin < i {
-            stack.push((imin, i - 1));
-        }
-    }
-    Some(())
-}
-
-fn fill_matrices<T: CkNum>(
-    data: &[T],
-    matrix: &mut FlatMatrix<T>,
-    backtrack_matrix: &mut FlatMatrix<usize>,
-    nclusters: usize,
-) -> Option<()> {
-    let nvalues = data.len();
-    let mut sumx = Vec::with_capacity(nvalues);
-    let mut sumxsq = Vec::with_capacity(nvalues);
-    let shift = data[nvalues / 2];
-    // Initialize first row in matrix & backtrack_matrix
-    // Pre-compute sumx and sumxsq
-    sumx.push(data[0] - shift);
-    sumxsq.push((data[0] - shift) * (data[0] - shift));
-
-    for i in 1..nvalues {
-        let shifted = data[i] - shift;
-        sumx.push(sumx[i - 1] + shifted);
-        sumxsq.push(sumxsq[i - 1] + shifted * shifted);
-    }
-
-    // Initialize matrix for k = 0
-    for i in 0..nvalues {
-        matrix.set(0, i, ssq(0, i, &sumx, &sumxsq)?);
-        backtrack_matrix.set(0, i, 0);
-    }
-
-    // Pre-allocate stack for divide-and-conquer (reused across columns)
-    // Maximum depth is log2(n) + 1 for binary tree traversal
-    let stack_capacity = ((nvalues as f64).log2().ceil() as usize).max(1) + 1;
-    let mut stack = Vec::with_capacity(stack_capacity);
-
-    for k in 1..nclusters {
-        let imin = if k < nclusters {
-            k.max(1)
-        } else {
-            // No need to compute matrix[k - 1][0] ... matrix[k - 1][n - 2]
-            nvalues - 1
-        };
-        fill_matrix_column(
-            imin,
-            nvalues - 1,
-            k,
-            matrix,
-            backtrack_matrix,
-            &sumx,
-            &sumxsq,
-            &mut stack,
-        )?;
-    }
-    Some(())
-}
-
-/// Compute per-cluster statistics (center, size, withinss) for a set of clusters.
-fn compute_cluster_stats<T: CkNum>(clusters: &[Vec<T>]) -> Option<Vec<ClusterStats<T>>> {
-    clusters
-        .iter()
-        .map(|cluster| {
-            let size = cluster.len();
-            let n = T::from_usize(size)?;
-            let sum: T = cluster.iter().copied().fold(T::zero(), |acc, x| acc + x);
-            let center = sum / n;
-            let withinss = cluster
-                .iter()
-                .copied()
-                .fold(T::zero(), |acc, x| acc + (x - center) * (x - center));
-            Some(ClusterStats {
-                center,
-                size,
-                withinss,
-            })
-        })
-        .collect()
-}
-
-/// Compute the BIC for a clustering result under a Gaussian mixture model.
+/// Determine the optimal number of clusters using the Bayesian Information
+/// Criterion (BIC) and return the clustering result with per-cluster statistics.
 ///
-/// Following Song & Zhong (2020):
-/// - Log-likelihood per cluster j: -n_j/2 * ln(2*pi) - n_j/2 * ln(sigma_j^2) - (n_j - 1)/2
-/// - For singleton clusters (n_j = 1), sigma_j^2 = total_variance / n
-/// - Number of parameters: p = 3k - 1
-/// - BIC = -2 * log(L) + p * ln(n)
-fn compute_bic<T: CkNum + Float>(
-    stats: &[ClusterStats<T>],
-    n: usize,
-    total_variance: T,
-) -> Option<T> {
-    let k = stats.len();
-    let n_t = T::from_usize(n)?;
-    let two = T::from_f64(2.0)?;
-    let two_pi = T::from_f64(std::f64::consts::TAU)?;
-    let ln_two_pi = two_pi.ln();
+/// This follows the approach of Song & Zhong (2020), evaluating each candidate k
+/// in the range `k_min..=k_max` and selecting the k that minimises BIC.
+///
+/// # Arguments
+/// * `data` - The input data to cluster
+/// * `config` - Clustering configuration; use [`CkmeansConfig::default()`] for defaults
+///   (k = 1..=9)
+///
+/// # References
+/// 1. Song, M., & Zhong, H. (2020). Efficient weighted univariate clustering maps
+///    outstanding dysregulated genomic zones in human cancers. Bioinformatics, 36(20), 5027-5036.
+///
+/// # Example
+///
+/// ```
+/// use ckmeans::{ckmeans_optimal, CkmeansConfig};
+///
+/// let data = vec![1.0, 1.0, 1.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0];
+/// let result = ckmeans_optimal(&data, CkmeansConfig::default()).unwrap();
+/// assert_eq!(result.k, 3);
+/// ```
+pub fn ckmeans_optimal<T: CkNum + Float>(
+    data: &[T],
+    config: CkmeansConfig,
+) -> Result<CkmeansResult<T>, CkmeansErr> {
+    let k_min = config.k_min;
+    let k_max = config.k_max;
 
-    // Fallback variance for singleton clusters
-    let singleton_var = total_variance / n_t;
+    if k_min == 0 {
+        return Err(CkmeansErr::TooFewClassesError);
+    }
+    if k_min > k_max {
+        return Err(CkmeansErr::InvalidRangeError);
+    }
+    if (k_min as usize) > data.len() {
+        return Err(CkmeansErr::TooManyClassesError);
+    }
 
-    let mut log_likelihood = T::zero();
+    // Cap k_max to data length
+    let k_max = k_max.min(data.len() as u8);
 
-    for stat in stats {
-        let n_j = T::from_usize(stat.size)?;
-        let sigma_sq = if stat.size <= 1 {
-            singleton_var
-        } else {
-            stat.withinss / n_j
-        };
+    // Check for all-identical values
+    let sorted = algo::numeric_sort(data);
+    if sorted.first() == sorted.last() {
+        let stats = algo::compute_cluster_stats(std::slice::from_ref(&sorted))
+            .ok_or(CkmeansErr::ConversionError)?;
+        return Ok(CkmeansResult {
+            clusters: vec![sorted],
+            k: 1,
+            bic: vec![(1, T::zero())],
+            stats,
+        });
+    }
 
-        // Guard against zero variance (all identical values in cluster)
-        if sigma_sq <= T::zero() {
-            // Perfectly homogeneous cluster -- skip the variance penalty.
-            // Only the constant terms contribute.
-            log_likelihood = log_likelihood - n_j / two * ln_two_pi;
-        } else {
-            log_likelihood = log_likelihood
-                - n_j / two * ln_two_pi
-                - n_j / two * sigma_sq.ln()
-                - (n_j - T::one()) / two;
+    // Compute total variance for singleton cluster fallback in BIC
+    let n = data.len();
+    let n_t = T::from_usize(n).ok_or(CkmeansErr::ConversionError)?;
+    let sum: T = data.iter().copied().fold(T::zero(), |acc, x| acc + x);
+    let mean = sum / n_t;
+    let total_variance = data
+        .iter()
+        .copied()
+        .fold(T::zero(), |acc, x| acc + (x - mean) * (x - mean))
+        / n_t;
+
+    let mut best_k: u8 = k_min;
+    let mut best_bic = T::infinity();
+    let mut best_clusters: Vec<Vec<T>> = Vec::new();
+    let mut best_stats: Vec<ClusterStats<T>> = Vec::new();
+    let mut all_bics: Vec<(u8, T)> = Vec::with_capacity((k_max - k_min + 1) as usize);
+
+    for k in k_min..=k_max {
+        let clusters = ckmeans(data, k)?;
+        let stats = algo::compute_cluster_stats(&clusters).ok_or(CkmeansErr::ConversionError)?;
+        let bic =
+            algo::compute_bic(&stats, n, total_variance).ok_or(CkmeansErr::ConversionError)?;
+
+        all_bics.push((k, bic));
+
+        if bic < best_bic {
+            best_bic = bic;
+            best_k = k;
+            best_clusters = clusters;
+            best_stats = stats;
         }
     }
 
-    // p = 3k - 1: k means + k variances + (k-1) mixing proportions
-    let p = T::from_usize(3 * k - 1)?;
-    let bic = -two * log_likelihood + p * n_t.ln();
-    Some(bic)
+    Ok(CkmeansResult {
+        clusters: best_clusters,
+        k: best_k,
+        bic: all_bics,
+        stats: best_stats,
+    })
 }
 
 /// Minimizing the difference within groups – what Wang & Song refer to as
@@ -415,103 +274,6 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
     Ok(clusters)
 }
 
-/// Determine the optimal number of clusters using the Bayesian Information
-/// Criterion (BIC) and return the clustering result with per-cluster statistics.
-///
-/// This follows the approach of Song & Zhong (2020), evaluating each candidate k
-/// in the range `k_min..=k_max` and selecting the k that minimises BIC.
-///
-/// # Arguments
-/// * `data` - The input data to cluster
-/// * `config` - Clustering configuration; use [`CkmeansConfig::default()`] for defaults
-///   (k = 1..=9)
-///
-/// # References
-/// 1. Song, M., & Zhong, H. (2020). Efficient weighted univariate clustering maps
-///    outstanding dysregulated genomic zones in human cancers. Bioinformatics, 36(20), 5027-5036.
-///
-/// # Example
-///
-/// ```
-/// use ckmeans::{ckmeans_optimal, CkmeansConfig};
-///
-/// let data = vec![1.0, 1.0, 1.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0];
-/// let result = ckmeans_optimal(&data, CkmeansConfig::default()).unwrap();
-/// assert_eq!(result.k, 3);
-/// ```
-pub fn ckmeans_optimal<T: CkNum + Float>(
-    data: &[T],
-    config: CkmeansConfig,
-) -> Result<CkmeansResult<T>, CkmeansErr> {
-    let k_min = config.k_min;
-    let k_max = config.k_max;
-
-    if k_min == 0 {
-        return Err(CkmeansErr::TooFewClassesError);
-    }
-    if k_min > k_max {
-        return Err(CkmeansErr::InvalidRangeError);
-    }
-    if (k_min as usize) > data.len() {
-        return Err(CkmeansErr::TooManyClassesError);
-    }
-
-    // Cap k_max to data length
-    let k_max = k_max.min(data.len() as u8);
-
-    // Check for all-identical values
-    let sorted = numeric_sort(data);
-    if sorted.first() == sorted.last() {
-        let stats = compute_cluster_stats(std::slice::from_ref(&sorted))
-            .ok_or(CkmeansErr::ConversionError)?;
-        return Ok(CkmeansResult {
-            clusters: vec![sorted],
-            k: 1,
-            bic: vec![(1, T::zero())],
-            stats,
-        });
-    }
-
-    // Compute total variance for singleton cluster fallback in BIC
-    let n = data.len();
-    let n_t = T::from_usize(n).ok_or(CkmeansErr::ConversionError)?;
-    let sum: T = data.iter().copied().fold(T::zero(), |acc, x| acc + x);
-    let mean = sum / n_t;
-    let total_variance = data
-        .iter()
-        .copied()
-        .fold(T::zero(), |acc, x| acc + (x - mean) * (x - mean))
-        / n_t;
-
-    let mut best_k: u8 = k_min;
-    let mut best_bic = T::infinity();
-    let mut best_clusters: Vec<Vec<T>> = Vec::new();
-    let mut best_stats: Vec<ClusterStats<T>> = Vec::new();
-    let mut all_bics: Vec<(u8, T)> = Vec::with_capacity((k_max - k_min + 1) as usize);
-
-    for k in k_min..=k_max {
-        let clusters = ckmeans(data, k)?;
-        let stats = compute_cluster_stats(&clusters).ok_or(CkmeansErr::ConversionError)?;
-        let bic = compute_bic(&stats, n, total_variance).ok_or(CkmeansErr::ConversionError)?;
-
-        all_bics.push((k, bic));
-
-        if bic < best_bic {
-            best_bic = bic;
-            best_k = k;
-            best_clusters = clusters;
-            best_stats = stats;
-        }
-    }
-
-    Ok(CkmeansResult {
-        clusters: best_clusters,
-        k: best_k,
-        bic: all_bics,
-        stats: best_stats,
-    })
-}
-
 /// Cluster data and return the sorted data with cluster index ranges.
 /// This avoids copying data into separate cluster vectors.
 ///
@@ -537,9 +299,9 @@ pub fn ckmeans_indices<T: CkNum>(
         return Err(CkmeansErr::TooManyClassesError);
     }
     let nvalues = data.len();
-    let mut sorted = numeric_sort(data);
+    let mut sorted = algo::numeric_sort(data);
     // we'll use this as the maximum number of clusters
-    let unique_count = unique_count_sorted(&mut sorted);
+    let unique_count = algo::unique_count_sorted(&mut sorted);
     // if all of the input values are identical, there's one cluster
     // with all of the input in it.
     if unique_count == 1 {
@@ -548,15 +310,15 @@ pub fn ckmeans_indices<T: CkNum>(
     let nclusters = unique_count.min(nclusters as usize);
 
     // named 'S' originally
-    let mut matrix = FlatMatrix::new(nclusters, nvalues);
+    let mut matrix = algo::FlatMatrix::new(nclusters, nvalues);
     // named 'J' originally - store as usize to avoid conversions
-    let mut backtrack_matrix = FlatMatrix::<usize>::new(nclusters, nvalues);
+    let mut backtrack_matrix = algo::FlatMatrix::<usize>::new(nclusters, nvalues);
 
     // This is a dynamic programming approach to solving the problem of minimizing
     // within-cluster sum of squares. It's similar to linear regression
     // in this way, and this calculation incrementally computes the
     // sum of squares that are later read.
-    fill_matrices(&sorted, &mut matrix, &mut backtrack_matrix, nclusters)
+    algo::fill_matrices(&sorted, &mut matrix, &mut backtrack_matrix, nclusters)
         .ok_or(CkmeansErr::ConversionError)?;
 
     // The real work of Ckmeans clustering happens in the matrix generation:
@@ -583,10 +345,10 @@ pub fn ckmeans_indices<T: CkNum>(
 }
 
 /// The boundaries of the classes returned by [ckmeans] are "ugly" in the sense that the values
-/// returned are the lower bound of each cluster, which can’t be used for labelling, since they
+/// returned are the lower bound of each cluster, which can't be used for labelling, since they
 /// might have many decimal places. To create a legend, the values should be rounded — but the
 /// rounding might be either too loose (and would result in spurious decimal places), or too strict,
-/// resulting in classes ranging “from x to x”. A better approach is to choose the roundest number that
+/// resulting in classes ranging "from x to x". A better approach is to choose the roundest number that
 /// separates the lowest point from a class from the highest point
 /// in the _preceding_ class — thus giving just enough precision to distinguish the classes.
 ///
@@ -934,7 +696,7 @@ mod tests {
         ];
         let n: usize = 9;
         let total_variance: f64 = 100.0;
-        let bic = compute_bic(&stats, n, total_variance);
+        let bic = algo::compute_bic(&stats, n, total_variance);
         assert!(bic.is_some());
         // BIC should be a finite number
         assert!(bic.unwrap().is_finite());
@@ -957,7 +719,7 @@ mod tests {
         ];
         let n: usize = 6;
         let total_variance: f64 = 50.0;
-        let bic = compute_bic(&stats, n, total_variance);
+        let bic = algo::compute_bic(&stats, n, total_variance);
         assert!(bic.is_some());
         assert!(bic.unwrap().is_finite());
     }
@@ -965,7 +727,7 @@ mod tests {
     #[test]
     fn test_compute_cluster_stats() {
         let clusters = vec![vec![1.0, 2.0, 3.0], vec![10.0, 20.0]];
-        let stats = compute_cluster_stats(&clusters).unwrap();
+        let stats = algo::compute_cluster_stats(&clusters).unwrap();
         assert_eq!(stats.len(), 2);
         // Cluster [1, 2, 3]: center = 2.0, size = 3, withinss = (1-2)^2 + (2-2)^2 + (3-2)^2 = 2.0
         assert_eq!(stats[0].center, 2.0);

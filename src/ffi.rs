@@ -1,6 +1,8 @@
 //! The FFI module for Ckmeans
 
-use libc::{c_uchar, c_void, size_t};
+use libc::c_uchar;
+use libc::c_void;
+use libc::size_t;
 use std::f64;
 use std::ptr;
 use std::slice;
