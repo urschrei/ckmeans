@@ -46,7 +46,7 @@ Minimising the difference within groups (what Wang & Song refer to as `withinss`
 
 ## Data Types
 
-While this library supports both integer and floating-point types, **`f64` is the recommended type** for most clustering use cases. Continuous data is the primary target for optimal clustering, and the implementation is optimised for floating-point performance. Integer types work but may see reduced performance due to algorithmic trade-offs that favour f64.
+While this library supports both integer and floating-point types, **`f64` is the recommended type** for most clustering use cases. Continuous data is the primary target for optimal clustering. Integer inputs are promoted to `f64` internally for the clustering computation, so they cluster at the same speed; values beyond f64's exact integer range (2^53) may lose precision, which is the main reason to prefer `f64`.
 
 ## How It Works
 
@@ -56,7 +56,7 @@ The algorithm fills two matrices using dynamic programming:
 
 For each column `k` (number of clusters), the algorithm finds the optimal split point `j` for each position `i` by minimising `SSQ(j, i) + S[k-1][j-1]`, where `SSQ(j, i)` is the sum-of-squares for elements `j` to `i` (computed in O(1) using prefix sums).
 
-The key to linear-time performance is the SMAWK algorithm's monotonicity property: the optimal split point for position `i` is always >= the optimal split point for position `i-1`. This allows a divide-and-conquer approach that processes each column in O(n) time, giving O(kn) total complexity.
+Performance comes from the monotonicity of the optimal split point: the optimal split for position `i` is always >= the optimal split for position `i-1`. This is the precondition for a divide-and-conquer dynamic-programming optimisation, which bounds the search at each step and processes each column in O(n log n) time, giving O(kn log n) overall. (The same monotonicity is what the SMAWK algorithm exploits to reach O(n) per column; in practice, though, these divide-and-conquer bounds keep each column close to linear with a smaller constant factor than SMAWK.)
 
 Like the [original R implementation](https://cran.r-project.org/web/packages/Ckmeans.1d.dp/index.html), this implementation can automatically determine the optimal number of clusters using `ckmeans_optimal`, which evaluates candidates using the Bayesian Information Criterion (BIC). It also provides the `roundbreaks` method to aid labelling.
 
@@ -126,15 +126,14 @@ Optimised binaries will be available in `target/pgo-optimized/`.
 - For maximum performance, ensure your use case matches the training profile (k values between 3-25)
 
 ## Complexity
-$O(kn)$. Other approaches such as Hilferink's [`CalcNaturalBreaks`](https://www.geodms.nl/CalcNaturalBreaks) or k-means have comparable complexity, but do _not_ guarantee optimality. In practice, they require many rounds to approach an optimal result, so in practice they're slower.
+$O(kn \log n)$. Other approaches such as Hilferink's [`CalcNaturalBreaks`](https://www.geodms.nl/CalcNaturalBreaks) or k-means have comparable complexity, but do _not_ guarantee optimality. In practice, they require many rounds to approach an optimal result, so in practice they're slower.
 ### Note
-Wang and Song (2011) state that the algorithm runs in $O(k^2n)$ in their introduction. However, they have since updated their dynamic programming algorithm (see August 2016 note [here](https://github.com/cran/Ckmeans.1d.dp/blob/f7f2920fc9aabab184a2acff29e7965ce4f90173/src/Ckmeans.1d.dp.cpp#L91-L95)) which reduces the complexity to linear time. This approach has been used in the extant implementations listed above, and reproduced here.
+Wang and Song (2011) state that the algorithm runs in $O(k^2n)$ in their introduction. They have since updated their dynamic programming algorithm (see the August 2016 note [here](https://github.com/cran/Ckmeans.1d.dp/blob/f7f2920fc9aabab184a2acff29e7965ce4f90173/src/Ckmeans.1d.dp.cpp#L91-L95)), reported there as $O(kn)$. The divide-and-conquer search reproduced here is $O(kn \log n)$ in the worst case, with the monotonicity bounds keeping it close to linear in practice.
 
 ## Possible Improvements
 
 - **SIMD**: The SSQ computation could potentially benefit from SIMD vectorisation
 - **Parallelisation**: Columns could be processed in parallel using rayon (though dependencies between columns limit this)
-- **Integer optimisation**: The current implementation favours f64; a separate code path with early-exit optimisation could improve integer performance
 - **Property-based tests**: Additional testing coverage
 
 # References

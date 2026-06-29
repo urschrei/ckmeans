@@ -309,8 +309,9 @@ pub fn ckmeans_indices<T: CkNum>(
     }
     let nclusters = unique_count.min(nclusters as usize);
 
-    // named 'S' originally
-    let mut matrix = algo::FlatMatrix::new(nclusters, nvalues);
+    // named 'S' originally. The dynamic program runs in f64 regardless of the
+    // input element type; only the backtrack indices feed the result.
+    let mut matrix = algo::FlatMatrix::<f64>::new(nclusters, nvalues);
     // named 'J' originally - store as usize to avoid conversions
     let mut backtrack_matrix = algo::FlatMatrix::<usize>::new(nclusters, nvalues);
 
@@ -393,6 +394,22 @@ mod tests {
             vec![1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 5, 5, 5, 7, 7],
             vec![12, 13, 14, 15, 16],
             vec![78, 82],
+        ];
+        let res = ckmeans(&i, 3).unwrap();
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_clustering_large_integers_no_overflow() {
+        // Squared deviations of these values exceed i32::MAX, which overflowed
+        // the previous element-typed accumulator (a panic in debug builds). The
+        // dynamic program now runs in f64, so large integer inputs cluster
+        // correctly.
+        let i = vec![0, 1, 2, 3, 100_000, 100_001, 100_002, 200_000, 200_001i32];
+        let expected = vec![
+            vec![0, 1, 2, 3],
+            vec![100_000, 100_001, 100_002],
+            vec![200_000, 200_001],
         ];
         let res = ckmeans(&i, 3).unwrap();
         assert_eq!(res, expected);
