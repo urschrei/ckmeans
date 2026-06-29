@@ -46,35 +46,39 @@ impl<T: CkNum> FlatMatrix<T> {
     }
 }
 
+/// Within-cluster sum of squares for the sorted segment `j..=i`.
+///
+/// The dynamic program is evaluated in `f64` regardless of the input element
+/// type. Only the cluster *boundaries* (stored as `usize` indices) feed the
+/// returned clustering, so the accumulator type does not affect the element
+/// type of the result. Accumulating in `f64` also avoids the overflow the
+/// previous element-typed accumulation was prone to for large integer inputs
+/// (e.g. the squared deviations of `i32` data readily exceed `i32::MAX`).
 #[inline(always)]
-fn ssq<T: CkNum>(j: usize, i: usize, sumx: &[T], sumxsq: &[T]) -> Option<T> {
-    let n = T::from_usize(i - j + 1)?;
+fn ssq(j: usize, i: usize, sumx: &[f64], sumxsq: &[f64]) -> f64 {
+    let n = (i - j + 1) as f64;
     let sji = if j > 0 {
         let sum_diff = sumx[i] - sumx[j - 1];
         let muji = sum_diff / n;
         sumxsq[i] - sumxsq[j - 1] - n * muji * muji
     } else {
-        let n_plus_one = T::from_usize(i + 1)?;
+        let n_plus_one = (i + 1) as f64;
         sumxsq[i] - (sumx[i] * sumx[i]) / n_plus_one
     };
-    if sji < T::zero() {
-        Some(T::zero())
-    } else {
-        Some(sji)
-    }
+    if sji < 0.0 { 0.0 } else { sji }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn fill_matrix_column<T: CkNum>(
+fn fill_matrix_column(
     imin: usize,
     imax: usize,
     column: usize,
-    matrix: &mut FlatMatrix<T>,
+    matrix: &mut FlatMatrix<f64>,
     backtrack_matrix: &mut FlatMatrix<usize>,
-    sumx: &[T],
-    sumxsq: &[T],
+    sumx: &[f64],
+    sumxsq: &[f64],
     stack: &mut Vec<(usize, usize)>,
-) -> Option<()> {
+) {
     // Reuse the pre-allocated stack for divide-and-conquer traversal
     stack.clear();
     stack.push((imin, imax));
@@ -87,7 +91,10 @@ fn fill_matrix_column<T: CkNum>(
         // Start at midpoint between imin and imax
         let i = imin + (imax - imin) / 2;
 
-        // Compute SMAWK bounds for j
+        // Bound the optimal split point j using the monotonicity of optimal
+        // splits (it is non-decreasing in both i and the cluster count). These
+        // bounds drive the divide-and-conquer search; they are not the SMAWK
+        // algorithm.
         let mut jlow = column;
         if imin > column {
             jlow = jlow.max(backtrack_matrix.get(column, imin - 1));
@@ -103,10 +110,10 @@ fn fill_matrix_column<T: CkNum>(
         // This computes ssq exactly once per j (the old two-pointer approach
         // computed ssq twice for each index).
         let mut best_j = jlow;
-        let mut best_cost = ssq(jlow, i, sumx, sumxsq)? + matrix.get(column - 1, jlow - 1);
+        let mut best_cost = ssq(jlow, i, sumx, sumxsq) + matrix.get(column - 1, jlow - 1);
 
         for j in (jlow + 1)..=jhigh {
-            let cost = ssq(j, i, sumx, sumxsq)? + matrix.get(column - 1, j - 1);
+            let cost = ssq(j, i, sumx, sumxsq) + matrix.get(column - 1, j - 1);
             if cost < best_cost {
                 best_cost = cost;
                 best_j = j;
@@ -124,33 +131,35 @@ fn fill_matrix_column<T: CkNum>(
             stack.push((imin, i - 1));
         }
     }
-    Some(())
 }
 
 pub(crate) fn fill_matrices<T: CkNum>(
     data: &[T],
-    matrix: &mut FlatMatrix<T>,
+    matrix: &mut FlatMatrix<f64>,
     backtrack_matrix: &mut FlatMatrix<usize>,
     nclusters: usize,
 ) -> Option<()> {
     let nvalues = data.len();
     let mut sumx = Vec::with_capacity(nvalues);
     let mut sumxsq = Vec::with_capacity(nvalues);
-    let shift = data[nvalues / 2];
-    // Initialize first row in matrix & backtrack_matrix
-    // Pre-compute sumx and sumxsq
-    sumx.push(data[0] - shift);
-    sumxsq.push((data[0] - shift) * (data[0] - shift));
+    // Shift by a central value to improve the conditioning of the cumulative
+    // sums. `to_f64` is the only fallible step; it cannot fail for the standard
+    // numeric types but is propagated as `None` (ConversionError) to be safe.
+    let shift = data[nvalues / 2].to_f64()?;
 
+    // Pre-compute sumx and sumxsq in f64
+    let first = data[0].to_f64()? - shift;
+    sumx.push(first);
+    sumxsq.push(first * first);
     for i in 1..nvalues {
-        let shifted = data[i] - shift;
+        let shifted = data[i].to_f64()? - shift;
         sumx.push(sumx[i - 1] + shifted);
         sumxsq.push(sumxsq[i - 1] + shifted * shifted);
     }
 
     // Initialize matrix for k = 0
     for i in 0..nvalues {
-        matrix.set(0, i, ssq(0, i, &sumx, &sumxsq)?);
+        matrix.set(0, i, ssq(0, i, &sumx, &sumxsq));
         backtrack_matrix.set(0, i, 0);
     }
 
@@ -170,7 +179,7 @@ pub(crate) fn fill_matrices<T: CkNum>(
             &sumx,
             &sumxsq,
             &mut stack,
-        )?;
+        );
     }
     Some(())
 }

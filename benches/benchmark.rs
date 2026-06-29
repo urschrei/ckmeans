@@ -93,7 +93,7 @@ fn bench_pathological(c: &mut Criterion) {
 
     let mut rng = rand::rng();
 
-    // Bimodal: two tight clusters with a gap (should have tight SMAWK bounds)
+    // Bimodal: two tight clusters with a gap (should have tight monotonicity bounds)
     let cluster1 = Normal::new(0.0, 1.0).unwrap();
     let cluster2 = Normal::new(100.0, 1.0).unwrap();
     let mut bimodal: Vec<f64> = (0..55_000).map(|_| rng.sample(cluster1)).collect();
@@ -102,7 +102,7 @@ fn bench_pathological(c: &mut Criterion) {
         b.iter(|| ckmeans(black_box(&bimodal), black_box(7)).unwrap());
     });
 
-    // Nearly uniform: worst case for SMAWK bounds (all values roughly equidistant)
+    // Nearly uniform: worst case for the monotonicity bounds (all values roughly equidistant)
     let uniform = Uniform::new(0.0, 1.0).unwrap();
     let nearly_uniform: Vec<f64> = (0..110_000).map(|_| rng.sample(uniform)).collect();
     group.bench_function("uniform_110k_k50", |b| {
