@@ -83,66 +83,40 @@ unsafe fn external_slice<'a>(arr: &ExternalArray) -> Option<&'a [f64]> {
     Some(unsafe { slice::from_raw_parts(arr.data.cast(), arr.len) })
 }
 
-// Convert individual Ckmeans result classes into things that can be leaked across the FFI boundary
-impl From<Vec<f64>> for InternalArray {
-    fn from(v: Vec<f64>) -> Self {
-        let boxed = v.into_boxed_slice();
-        let blen = boxed.len();
-        let rawp = Box::into_raw(boxed);
-        InternalArray {
-            data: rawp.cast(),
-            len: blen as size_t,
-        }
+/// Leak the clusters so that they can be returned across the FFI boundary.
+/// [`reclaim_clusters`] takes ownership again.
+fn leak_clusters(clusters: Vec<Vec<f64>>) -> WrapperArray {
+    let classes: Box<[InternalArray]> = clusters
+        .into_iter()
+        .map(|cluster| {
+            let boxed = cluster.into_boxed_slice();
+            InternalArray {
+                len: boxed.len(),
+                data: Box::into_raw(boxed).cast(),
+            }
+        })
+        .collect();
+    WrapperArray {
+        len: classes.len(),
+        data: Box::into_raw(classes).cast(),
     }
 }
 
-impl From<Vec<f64>> for ExternalArray {
-    fn from(v: Vec<f64>) -> Self {
-        let boxed = v.into_boxed_slice();
-        let blen = boxed.len();
-        let rawp = Box::into_raw(boxed);
-        ExternalArray {
-            data: rawp.cast(),
-            len: blen as size_t,
-        }
-    }
-}
-
-impl From<Vec<Vec<f64>>> for WrapperArray {
-    fn from(arr: Vec<Vec<f64>>) -> Self {
-        let iarrs: Vec<InternalArray> = arr.into_iter().map(std::convert::Into::into).collect();
-        let boxed = iarrs.into_boxed_slice();
-        let blen = boxed.len();
-        let rawp = Box::into_raw(boxed);
-        WrapperArray {
-            data: rawp.cast(),
-            len: blen as size_t,
-        }
-    }
-}
-
-// Reconstitute individual CkMeans result classes so they can be eventually dropped
-impl From<InternalArray> for Vec<f64> {
-    fn from(arr: InternalArray) -> Self {
-        // we originated this data, so pointer-to-slice -> box -> vec
-        unsafe {
-            // let p: *mut [f64] = ptr::slice_from_raw_parts_mut(*arr.data.cast(), arr.len);
-            let p = ptr::slice_from_raw_parts_mut(arr.data as _, arr.len);
-            Box::from_raw(p).into_vec()
-        }
-    }
-}
-
-// Reconstitute a CkMeans result that has been returned across the FFI boundary so it can be dropped
-impl From<WrapperArray> for Vec<Vec<f64>> {
-    fn from(arr: WrapperArray) -> Self {
-        let arrays = unsafe {
-            // let p = ptr::slice_from_raw_parts_mut(*arr.data.cast::<*mut InternalArray>(), arr.len);
-            let p: *mut [InternalArray] = ptr::slice_from_raw_parts_mut(arr.data as _, arr.len);
-            Box::from_raw(p).into_vec()
-        };
-        arrays.into_iter().map(std::convert::Into::into).collect()
-    }
+/// Take ownership of clusters that [`leak_clusters`] leaked.
+///
+/// # Safety
+///
+/// `result` must be a value returned by [`leak_clusters`], and ownership must
+/// not be taken more than once.
+unsafe fn reclaim_clusters(result: WrapperArray) -> Vec<Vec<f64>> {
+    let classes: *mut [InternalArray] = ptr::slice_from_raw_parts_mut(result.data as _, result.len);
+    unsafe { Box::from_raw(classes) }
+        .into_iter()
+        .map(|class| {
+            let values: *mut [f64] = ptr::slice_from_raw_parts_mut(class.data as _, class.len);
+            unsafe { Box::from_raw(values) }.into_vec()
+        })
+        .collect()
 }
 
 /// An FFI wrapper for [ckmeans].
@@ -172,7 +146,7 @@ pub unsafe extern "C" fn ckmeans_ffi(
             .and_then(|result| result.map_err(|err| CkmeansStatus::from(&err))),
     };
     let (code, result) = match outcome {
-        Ok(clusters) => (CkmeansStatus::Ok, clusters.into()),
+        Ok(clusters) => (CkmeansStatus::Ok, leak_clusters(clusters)),
         Err(code) => (
             code,
             WrapperArray {
@@ -198,7 +172,7 @@ pub unsafe extern "C" fn drop_ckmeans_result(result: WrapperArray) {
     if result.data.is_null() {
         return;
     }
-    let _: Vec<Vec<f64>> = result.into();
+    drop(unsafe { reclaim_clusters(result) });
 }
 
 #[cfg(test)]
@@ -207,7 +181,7 @@ mod tests {
     use hegel::TestCase;
     use hegel::generators as gs;
 
-    /// Borrow `data` as an [`ExternalArray`]. `From<Vec<f64>>` leaks the vector.
+    /// Borrow `data` as an [`ExternalArray`].
     fn borrow(data: &[f64]) -> ExternalArray {
         ExternalArray {
             data: data.as_ptr().cast(),
@@ -235,7 +209,7 @@ mod tests {
             1f64, 12., 13., 14., 15., 16., 2., 2., 3., 5., 7., 1., 2., 5., 7., 1., 5., 82., 1.,
             1.3, 1.1, 78.,
         ];
-        let res: Vec<Vec<f64>> = unsafe { ckmeans_ffi(borrow(&i), 3, ptr::null_mut()) }.into();
+        let res = unsafe { reclaim_clusters(ckmeans_ffi(borrow(&i), 3, ptr::null_mut())) };
         let expected = vec![
             vec![
                 1.0, 1.0, 1.0, 1.0, 1.1, 1.3, 2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0, 7.0, 7.0,
@@ -257,7 +231,7 @@ mod tests {
         let k = tc.draw(gs::integers::<u8>().min_value(1).max_value(max));
         let (status, result) = call(borrow(&data), k);
         assert_eq!(status, CkmeansStatus::Ok);
-        let result: Vec<Vec<f64>> = result.into();
+        let result = unsafe { reclaim_clusters(result) };
         assert_eq!(result, ckmeans(&data, k).unwrap());
     }
 
