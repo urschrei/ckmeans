@@ -79,7 +79,8 @@ pub struct ClusterStats<T> {
 
 /// Configuration for [`ckmeans_optimal`].
 ///
-/// The default evaluates k = 1 through 9:
+/// The default evaluates k = 1 through 9. [`ckmeans_optimal`] caps `k_max` at the number of
+/// distinct values in the data.
 ///
 /// | Field   | Default |
 /// |---------|---------|
