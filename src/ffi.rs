@@ -127,6 +127,8 @@ pub extern "C" fn drop_ckmeans_result(result: WrapperArray) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hegel::TestCase;
+    use hegel::generators as gs;
 
     #[test]
     fn ffi() {
@@ -143,5 +145,23 @@ mod tests {
             vec![78., 82.],
         ];
         assert_eq!(res, expected);
+    }
+
+    #[hegel::test(test_cases = 1000)]
+    fn ffi_round_trip_matches_ckmeans(tc: TestCase) {
+        let data = tc.draw(
+            gs::vecs(gs::floats::<f64>().allow_nan(false))
+                .min_size(1)
+                .max_size(60),
+        );
+        let max = u8::try_from(data.len()).unwrap_or(u8::MAX);
+        let k = tc.draw(gs::integers::<u8>().min_value(1).max_value(max));
+        // Borrow the input: `From<Vec<f64>> for ExternalArray` leaks the vector.
+        let external = ExternalArray {
+            data: data.as_ptr().cast(),
+            len: data.len(),
+        };
+        let result: Vec<Vec<f64>> = ckmeans_ffi(external, k).into();
+        assert_eq!(result, ckmeans(&data, k).unwrap());
     }
 }
