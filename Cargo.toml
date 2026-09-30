@@ -9,7 +9,7 @@ documentation = "https://docs.rs/ckmeans"
 readme = "README.md"
 keywords = ["gis", "geo", "spatial", "clustering"]
 autobenches = true
-rust-version = "1.85"
+rust-version = "1.86"
 categories = ["science::geo"]
 
 [badges]
@@ -24,6 +24,7 @@ wasm-bindgen = "0.2"
 
 [dev-dependencies]
 criterion = "0.8.0"
+hegeltest = "0.48.1"
 rand = "0.10.0"
 rand_distr = "0.6.0"
 
