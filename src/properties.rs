@@ -209,3 +209,119 @@ macro_rules! nan_properties {
 
 nan_properties!(f64_nan, f64);
 nan_properties!(f32_nan, f32);
+
+/// Optimality of `ckmeans` against independent reference solutions.
+mod optimality {
+    use super::*;
+
+    /// Values in a range where squared deviations cannot overflow, mixed with a
+    /// small pool of values so that ties and duplicates occur often.
+    fn element() -> impl PrintableGenerator<f64> {
+        hegel::one_of!(
+            gs::floats::<f64>().min_value(-1e3).max_value(1e3),
+            gs::integers::<u8>().max_value(8).map(f64::from),
+        )
+    }
+
+    fn draw_data(tc: &TestCase, max_len: usize) -> Vec<f64> {
+        let len = tc.draw(gs::integers::<usize>().min_value(1).max_value(max_len));
+        tc.draw(gs::vecs(element()).min_size(len).max_size(len))
+    }
+
+    /// Two-pass within-cluster sum of squares.
+    fn ssq(cluster: &[f64]) -> f64 {
+        let mean = cluster.iter().sum::<f64>() / cluster.len() as f64;
+        cluster.iter().map(|x| (x - mean) * (x - mean)).sum()
+    }
+
+    fn total_ssq(clusters: &[Vec<f64>]) -> f64 {
+        clusters.iter().map(|c| ssq(c)).sum()
+    }
+
+    /// Absolute tolerance for comparing sums of squares of `data`.
+    fn tolerance(data: &[f64]) -> f64 {
+        1e-9 * ssq(data) + 1e-12
+    }
+
+    /// Smallest total sum of squares over every split of `sorted` into
+    /// `groups` contiguous, non-empty groups.
+    fn brute_force(sorted: &[f64], groups: usize) -> f64 {
+        if groups == 1 {
+            return ssq(sorted);
+        }
+        (1..=sorted.len() - (groups - 1))
+            .map(|split| ssq(&sorted[..split]) + brute_force(&sorted[split..], groups - 1))
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// Smallest total sum of squares over every split of `sorted` into
+    /// `groups` contiguous, non-empty groups, by an O(groups * n^2) dynamic
+    /// program with no bounds on the split search.
+    fn reference_dp(sorted: &[f64], groups: usize) -> f64 {
+        let n = sorted.len();
+        // segment[j][i] is the sum of squares of sorted[j..=i] (Welford).
+        let mut segment = vec![vec![0.0; n]; n];
+        for (j, row) in segment.iter_mut().enumerate() {
+            let (mut mean, mut m2) = (0.0, 0.0);
+            for (i, &x) in sorted.iter().enumerate().skip(j) {
+                let count = (i - j + 1) as f64;
+                let delta = x - mean;
+                mean += delta / count;
+                m2 += delta * (x - mean);
+                row[i] = m2;
+            }
+        }
+        let mut cost: Vec<f64> = (0..n).map(|i| segment[0][i]).collect();
+        for c in 1..groups {
+            let mut next = vec![f64::INFINITY; n];
+            for i in c..n {
+                for j in c..=i {
+                    next[i] = next[i].min(cost[j - 1] + segment[j][i]);
+                }
+            }
+            cost = next;
+        }
+        cost[n - 1]
+    }
+
+    #[hegel::test(test_cases = 2000)]
+    fn ckmeans_is_no_worse_than_brute_force(tc: TestCase) {
+        let data = draw_data(&tc, 10);
+        let k = draw_k(&tc, data.len());
+        let clusters = ckmeans(&data, k).unwrap();
+        let best = brute_force(&sorted(&data), clusters.len());
+        let found = total_ssq(&clusters);
+        assert!(
+            found <= best + tolerance(&data),
+            "ckmeans total {found} > brute-force optimum {best} for {clusters:?}"
+        );
+    }
+
+    #[hegel::test(test_cases = 500)]
+    fn ckmeans_is_no_worse_than_reference_dp(tc: TestCase) {
+        let data = draw_data(&tc, 200);
+        let k = draw_k(&tc, data.len().min(20));
+        let clusters = ckmeans(&data, k).unwrap();
+        let best = reference_dp(&sorted(&data), clusters.len());
+        let found = total_ssq(&clusters);
+        assert!(
+            found <= best + tolerance(&data),
+            "ckmeans total {found} > reference optimum {best}"
+        );
+    }
+
+    #[hegel::test(test_cases = 500)]
+    fn total_ssq_does_not_increase_with_k(tc: TestCase) {
+        let data = draw_data(&tc, 60);
+        let tol = tolerance(&data);
+        let mut previous = f64::INFINITY;
+        for k in 1..=data.len() as u8 {
+            let current = total_ssq(&ckmeans(&data, k).unwrap());
+            assert!(
+                current <= previous + tol,
+                "total sum of squares rose from {previous} to {current} at k = {k}"
+            );
+            previous = current;
+        }
+    }
+}
