@@ -48,6 +48,14 @@ Minimising the difference within groups (what Wang & Song refer to as `withinss`
 
 While this library supports both integer and floating-point types, **`f64` is the recommended type** for most clustering use cases. Continuous data is the primary target for optimal clustering. Integer inputs are promoted to `f64` internally for the clustering computation, so they cluster at the same speed; values beyond f64's exact integer range (2^53) may lose precision, which is the main reason to prefer `f64`.
 
+## Numerical Limits
+
+NaN values cannot be clustered: all functions return `CkmeansErr::NanError` for input that contains NaN. The following limits apply to other input (see the `ckmeans` and `ckmeans_optimal` documentation for examples):
+
+- **Infinite values** are accepted, but a cluster that contains one has no finite sum of squares, so `ckmeans` returns a partition of the input with no optimality guarantee. `ckmeans_optimal` returns NaN BIC values for such input and uses `k_min`; the statistics of a cluster with an infinite value are NaN.
+- **Very large ranges**: the costs are computed in `f64` from cumulative sums. If the data spans a very large range (for example, values that differ by 1 alongside values of order 1e8), cost differences below `f64` resolution are lost. The result can then be sub-optimal by that amount, and equal values can be put in adjacent clusters. `roundbreaks` then returns the first value of the upper class as the break.
+- **Large integers**: integer values with a magnitude above 2^53 lose precision in the calculation. The clusters still contain the original values.
+
 ## How It Works
 
 The algorithm fills two matrices using dynamic programming:
