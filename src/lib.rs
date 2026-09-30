@@ -773,6 +773,16 @@ mod tests {
     }
 
     #[test]
+    fn test_compute_cluster_stats_equal_values() {
+        // A plain f32 sum-then-divide puts this centre at 999.9999, outside
+        // the cluster, with a non-zero withinss.
+        let clusters = vec![vec![999.99994f32; 5]];
+        let stats = algo::compute_cluster_stats(&clusters).unwrap();
+        assert_eq!(stats[0].center, 999.99994);
+        assert_eq!(stats[0].withinss, 0.0);
+    }
+
+    #[test]
     fn test_ckmeans_optimal_well_separated() {
         // Three obvious clusters
         let data = vec![1.0, 1.0, 1.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0];

@@ -188,15 +188,26 @@ pub(crate) fn fill_matrices<T: CkNum>(
     Some(())
 }
 
-/// Compute per-cluster statistics (center, size, withinss) for a set of clusters.
+/// Compute per-cluster statistics (center, size, withinss) for a set of sorted clusters.
 pub(crate) fn compute_cluster_stats<T: CkNum>(clusters: &[Vec<T>]) -> Option<Vec<ClusterStats<T>>> {
     clusters
         .iter()
         .map(|cluster| {
             let size = cluster.len();
             let n = T::from_usize(size)?;
-            let sum: T = cluster.iter().copied().fold(T::zero(), |acc, x| acc + x);
-            let center = sum / n;
+            // Sum the offsets from the first value, not the values. Then a
+            // cluster of equal values gets that value as its centre. The cluster
+            // is sorted: rounding can push the centre above the last value, so
+            // clamp it.
+            let (&low, &high) = (cluster.first()?, cluster.last()?);
+            let offset: T = cluster
+                .iter()
+                .copied()
+                .fold(T::zero(), |acc, x| acc + (x - low));
+            let mut center = low + offset / n;
+            if center > high {
+                center = high;
+            }
             let withinss = cluster
                 .iter()
                 .copied()
