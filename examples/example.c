@@ -1,5 +1,5 @@
 // C FFI example for ckmeans library
-// Compile: clang -lckmeans -L target/release -o ckmeans_example examples/example_improved.c
+// Compile: clang -lckmeans -L target/release -o ckmeans_example examples/example.c
 // Run: LD_LIBRARY_PATH=target/release ./ckmeans_example
 // Test for leaks (macOS): LD_LIBRARY_PATH=target/release leaks --atExit -- ./ckmeans_example
 
@@ -8,9 +8,23 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <math.h>
 #include "../include/header.h"
 
 #define NUM_CLASSES 3
+
+// Return a description of a CkmeansStatus value
+const char *status_message(CkmeansStatus status) {
+    switch (status) {
+        case CkmeansStatus_Ok: return "ok";
+        case CkmeansStatus_TooFewClasses: return "the number of classes is 0";
+        case CkmeansStatus_TooManyClasses: return "more classes than data values";
+        case CkmeansStatus_NanInput: return "the data contains NaN";
+        case CkmeansStatus_NullData: return "the data pointer is null";
+        case CkmeansStatus_InternalError: return "internal error";
+    }
+    return "unknown status";
+}
 
 // Convert WrapperArray of ExternalArrays to a 2D double array
 // Returns NULL on allocation failure
@@ -110,12 +124,12 @@ int main(int argc, const char *argv[]) {
         .len = input_length
     };
     
-    // Call ckmeans
-    WrapperArray result = ckmeans_ffi(input_array, NUM_CLASSES);
-    
-    // Check if the result is valid
-    if (result.data == NULL || result.len == 0) {
-        fprintf(stderr, "Error: ckmeans_ffi returned invalid result\n");
+    // Call ckmeans. On failure, the result has a NULL data pointer, and
+    // status contains the reason.
+    CkmeansStatus status;
+    WrapperArray result = ckmeans_ffi(input_array, NUM_CLASSES, &status);
+    if (status != CkmeansStatus_Ok) {
+        fprintf(stderr, "Error: ckmeans_ffi failed: %s\n", status_message(status));
         return EXIT_FAILURE;
     }
     
@@ -142,6 +156,15 @@ int main(int argc, const char *argv[]) {
     free_2d_array(clusters, result.len);
     free(cluster_sizes);
     drop_ckmeans_result(result);
+
+    // Invalid input returns an error status instead of aborting
+    double invalid[] = {1.0, NAN, 2.0};
+    ExternalArray invalid_array = {.data = invalid, .len = 3};
+    WrapperArray rejected = ckmeans_ffi(invalid_array, 2, &status);
+    printf("Input with NaN: %s\n", status_message(status));
+    assert(status == CkmeansStatus_NanInput && rejected.data == NULL);
+    // Dropping an error result is allowed and does nothing
+    drop_ckmeans_result(rejected);
 
     return EXIT_SUCCESS;
 }

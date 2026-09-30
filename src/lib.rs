@@ -44,6 +44,8 @@ mod wasm;
 
 pub use crate::errors::CkmeansErr;
 #[cfg(not(target_arch = "wasm32"))]
+pub use crate::ffi::CkmeansStatus;
+#[cfg(not(target_arch = "wasm32"))]
 pub use crate::ffi::ExternalArray;
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::ffi::InternalArray;
