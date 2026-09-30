@@ -121,8 +121,8 @@ pub struct CkmeansResult<T> {
     /// The chosen number of clusters.
     pub k: u8,
     /// BIC value for each candidate k evaluated, as `(k, bic)` pairs. A value is
-    /// NaN if the variance terms overflow, which can occur for values of very
-    /// large magnitude.
+    /// NaN if the data contains an infinite value, or if the variance terms
+    /// overflow, which can occur for values of very large magnitude.
     pub bic: Vec<(u8, T)>,
     /// Per-cluster statistics for the chosen clustering.
     pub stats: Vec<ClusterStats<T>>,
@@ -147,6 +147,11 @@ pub struct CkmeansResult<T> {
 /// - [`CkmeansErr::TooManyClassesError`] if `k_min` is greater than the number of distinct
 ///   values in `data`.
 /// - [`CkmeansErr::NanError`] if `data` contains NaN.
+///
+/// # Numerical limits
+/// The limits of [`ckmeans`] apply. In addition, if `data` contains an infinite value, every BIC
+/// value is NaN, and the result uses `k_min`. The [`ClusterStats`] of a cluster that contains an
+/// infinite value have a `withinss` of NaN, and a `center` that is infinite or NaN.
 ///
 /// # References
 /// 1. Song, M., & Zhong, H. (2020). Efficient weighted univariate clustering maps
@@ -260,6 +265,20 @@ pub fn ckmeans_optimal<T: CkNum + Float>(
 /// - [`CkmeansErr::TooManyClassesError`] if `nclusters` is greater than the number of data values.
 /// - [`CkmeansErr::NanError`] if `data` contains NaN.
 ///
+/// # Numerical limits
+/// - The dynamic program runs in `f64`. Integer values with a magnitude above 2^53 lose precision
+///   in the calculation. The clusters still contain the original values.
+/// - Infinite values are accepted, but a cluster that contains one has no finite sum of squares.
+///   The result is then a partition of the input with no optimality guarantee. For example,
+///   `ckmeans(&[1.0, 2.0, 3.0, f64::INFINITY, f64::INFINITY], 2)` returns
+///   `[[1.0], [2.0, 3.0, inf, inf]]`.
+/// - The costs are computed from cumulative sums. If the data spans a very large range, cost
+///   differences below `f64` resolution relative to the total sum of squares are lost. The result
+///   can then be sub-optimal by that amount, and equal values can be put in adjacent clusters. For
+///   example, `ckmeans(&[-94906266.0, 0.0, 0.0, 1.0], 3)` returns
+///   `[[-94906266.0], [0.0], [0.0, 1.0]]`. Its sum of squares is 0.5 more than that of the optimum
+///   `[[-94906266.0], [0.0, 0.0], [1.0]]`, against a total of approximately 6.7e15.
+///
 /// # References
 /// 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
 /// 2. <https://observablehq.com/@visionscarto/natural-breaks>
@@ -303,6 +322,9 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
 /// Returns: (sorted_data, cluster_ranges) where cluster_ranges contains (start, end) inclusive indices
 ///
 /// # Errors
+/// The same as [`ckmeans`].
+///
+/// # Numerical limits
 /// The same as [`ckmeans`].
 ///
 /// # Example
