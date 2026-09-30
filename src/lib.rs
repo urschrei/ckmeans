@@ -378,10 +378,24 @@ pub fn ckmeans_indices<T: CkNum>(
 /// in the _preceding_ class — thus giving just enough precision to distinguish the classes.
 ///
 /// This function is closer to what Jenks returns: `nclusters - 1` "breaks" in the data, useful for
-/// labelling.
+/// labelling. Each break `b` satisfies `last < b <= first`, where `last` is the highest value of a
+/// class and `first` is the lowest value of the next class. `b` is a multiple of the largest power
+/// of ten that has a multiple in that interval; of those multiples, it is the one nearest the
+/// midpoint. If no such multiple can be represented (for example, because a class boundary is
+/// infinite), `b` is `first`. For input with a very large range, where the differences in cost are
+/// below floating-point resolution, adjacent classes can share a value; `b` is then `first`, and
+/// does not satisfy `last < b`.
+///
+/// If `data` has fewer distinct values than `nclusters`, [ckmeans] returns one class per distinct
+/// value, and this function returns one break fewer than that number of classes.
+///
+/// # Errors
+/// The same as [`ckmeans`].
 ///
 /// # Original Implementation
-/// <https://observablehq.com/@visionscarto/natural-breaks#round>
+/// <https://observablehq.com/@visionscarto/natural-breaks#round>. The original rounds the
+/// midpoint down to a precision derived from the gap, which can return a break below the highest
+/// value of the lower class.
 pub fn roundbreaks<T: Float + Debug + FromPrimitive>(
     data: &[T],
     nclusters: u8,
@@ -389,19 +403,9 @@ pub fn roundbreaks<T: Float + Debug + FromPrimitive>(
     let ckm = ckmeans(data, nclusters)?;
     ckm.windows(2)
         .map(|pair| {
-            let p = T::from(10.0).ok_or(CkmeansErr::ConversionError)?.powf(
-                (T::one()
-                    - (*pair[1].first().ok_or(CkmeansErr::HighWindowError)?
-                        - *pair[0].last().ok_or(CkmeansErr::LowWindowError)?)
-                    .log10())
-                .floor(),
-            );
-            Ok((((*pair[1].first().ok_or(CkmeansErr::HighWindowError)?
-                + *pair[0].last().ok_or(CkmeansErr::LowWindowError)?)
-                / T::from(2.0).ok_or(CkmeansErr::ConversionError)?)
-                * p)
-                .floor()
-                / p)
+            let last = *pair[0].last().ok_or(CkmeansErr::LowWindowError)?;
+            let first = *pair[1].first().ok_or(CkmeansErr::HighWindowError)?;
+            algo::round_break(last, first).ok_or(CkmeansErr::ConversionError)
         })
         .collect()
 }
@@ -713,6 +717,14 @@ mod tests {
         let expected = vec![2.43, 3.5];
         let res = roundbreaks(&numbers, 3).unwrap();
         assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_roundbreaks_separates_classes() {
+        // Rounding the midpoint (2.635) down to a whole number gives 2, which
+        // is below the lower class.
+        let res = roundbreaks(&[2.1, 3.17], 2).unwrap();
+        assert_eq!(res, vec![3.0]);
     }
 
     #[test]
