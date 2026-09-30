@@ -3,11 +3,15 @@ use num_traits::Float;
 use crate::CkNum;
 use crate::ClusterStats;
 
-/// Return a sorted copy of the input. Will blow up in the presence of NaN.
-pub(crate) fn numeric_sort<T: CkNum>(arr: &[T]) -> Vec<T> {
+/// Return a sorted copy of the input, or `None` if the input contains a value
+/// that is not comparable with itself (NaN).
+pub(crate) fn numeric_sort<T: CkNum>(arr: &[T]) -> Option<Vec<T>> {
+    if arr.iter().any(|x| x.partial_cmp(x).is_none()) {
+        return None;
+    }
     let mut xs = arr.to_vec();
     xs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-    xs
+    Some(xs)
 }
 
 /// Assumes sorted input (so be sure only to use on `numeric_sort` output!)
