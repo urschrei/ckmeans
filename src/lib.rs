@@ -118,7 +118,9 @@ pub struct CkmeansResult<T> {
     pub clusters: Vec<Vec<T>>,
     /// The chosen number of clusters.
     pub k: u8,
-    /// BIC value for each candidate k evaluated, as `(k, bic)` pairs.
+    /// BIC value for each candidate k evaluated, as `(k, bic)` pairs. A value is
+    /// NaN if the variance terms overflow, which can occur for values of very
+    /// large magnitude.
     pub bic: Vec<(u8, T)>,
     /// Per-cluster statistics for the chosen clustering.
     pub stats: Vec<ClusterStats<T>>,
@@ -216,7 +218,9 @@ pub fn ckmeans_optimal<T: CkNum + Float>(
 
         all_bics.push((k, bic));
 
-        if bic < best_bic {
+        // Select k_min first, then any k with a lower BIC. Overflow in the
+        // variance terms can make a BIC NaN: a NaN never replaces a number.
+        if k == k_min || bic < best_bic || (best_bic.is_nan() && !bic.is_nan()) {
             best_bic = bic;
             best_k = k;
             best_clusters = clusters;
