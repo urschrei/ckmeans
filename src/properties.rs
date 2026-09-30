@@ -706,3 +706,78 @@ macro_rules! roundbreaks_properties {
 
 roundbreaks_properties!(f64_roundbreaks, f64, 1000.0, 1e-9);
 roundbreaks_properties!(f32_roundbreaks, f32, 10.0, 1e-4);
+
+/// Scale probe on large inputs. Run with `cargo nextest r --run-ignored only`.
+mod scale {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// Deterministic data: xorshift noise around `groups` centres.
+    fn synthetic(n: usize, groups: u64) -> Vec<f64> {
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        (0..n)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                let centre = (state % groups) as f64 * 100.0;
+                centre + (state >> 11) as f64 / (1u64 << 53) as f64 * 10.0
+            })
+            .collect()
+    }
+
+    fn assert_partition(data: &[f64], clusters: &[Vec<f64>], k: u8) {
+        assert_eq!(clusters.len(), distinct_count(data).min(usize::from(k)));
+        assert!(clusters.iter().all(|c| !c.is_empty()));
+        assert_eq!(clusters.concat(), sorted(data));
+    }
+
+    /// Shortest of three runs of `ckmeans(data, k)`.
+    fn time_ckmeans(data: &[f64], k: u8) -> Duration {
+        (0..3)
+            .map(|_| {
+                let start = Instant::now();
+                ckmeans(data, k).unwrap();
+                start.elapsed()
+            })
+            .min()
+            .unwrap()
+    }
+
+    #[test]
+    #[ignore = "scale probe"]
+    fn ckmeans_on_100k_values_with_50_clusters() {
+        let data = synthetic(100_000, 50);
+        let clusters = ckmeans(&data, 50).unwrap();
+        assert_partition(&data, &clusters, 50);
+    }
+
+    #[test]
+    #[ignore = "scale probe"]
+    fn ckmeans_on_1m_values_with_5_clusters() {
+        let data = synthetic(1_000_000, 5);
+        let clusters = ckmeans(&data, 5).unwrap();
+        assert_partition(&data, &clusters, 5);
+    }
+
+    #[test]
+    #[ignore = "scale probe"]
+    fn ckmeans_optimal_on_100k_values() {
+        let data = synthetic(100_000, 6);
+        let result = ckmeans_optimal(&data, CkmeansConfig::default()).unwrap();
+        assert_partition(&data, &result.clusters, result.k);
+        assert_eq!(result.clone(), result);
+        assert!(!format!("{result:?}").is_empty());
+    }
+
+    /// O(kn log n) predicts a ratio near 4.3 when n grows by a factor of 4;
+    /// quadratic growth gives 16.
+    #[test]
+    #[ignore = "scale probe"]
+    fn ckmeans_time_grows_close_to_linearly() {
+        let small = time_ckmeans(&synthetic(100_000, 20), 20);
+        let large = time_ckmeans(&synthetic(400_000, 20), 20);
+        let ratio = large.as_secs_f64() / small.as_secs_f64();
+        assert!(ratio < 8.0, "4x input took {ratio:.1}x as long");
+    }
+}
