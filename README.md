@@ -32,7 +32,8 @@ automatically using the Bayesian Information Criterion (BIC), following Song & Z
 use ckmeans::{ckmeans_optimal, CkmeansConfig};
 
 let data = vec![1.0, 1.0, 1.0, 50.0, 50.0, 50.0, 100.0, 100.0, 100.0];
-// CkmeansConfig::default() evaluates k = 1..=9
+// CkmeansConfig::default() evaluates k = 1..=9, capped at the number of
+// distinct values in the data (3 here)
 let result = ckmeans_optimal(&data, CkmeansConfig::default()).unwrap();
 // result.k == 3 (optimal number of clusters)
 // result.clusters contains the three clusters
@@ -138,11 +139,14 @@ $O(kn \log n)$. Other approaches such as Hilferink's [`CalcNaturalBreaks`](https
 ### Note
 Wang and Song (2011) state that the algorithm runs in $O(k^2n)$ in their introduction. They have since updated their dynamic programming algorithm (see the August 2016 note [here](https://github.com/cran/Ckmeans.1d.dp/blob/f7f2920fc9aabab184a2acff29e7965ce4f90173/src/Ckmeans.1d.dp.cpp#L91-L95)), reported there as $O(kn)$. The divide-and-conquer search reproduced here is $O(kn \log n)$ in the worst case, with the monotonicity bounds keeping it close to linear in practice.
 
+## Testing
+
+In addition to the unit tests, [`src/properties.rs`](src/properties.rs) contains property-based tests written with [`hegeltest`](https://crates.io/crates/hegeltest). They compare the clusters with a brute-force search and a reference dynamic program, and test the error cases, `ckmeans_optimal`, `roundbreaks` and the FFI. Run all tests with `cargo nextest r` or `cargo test`.
+
 ## Possible Improvements
 
 - **SIMD**: The SSQ computation could potentially benefit from SIMD vectorisation
 - **Parallelisation**: Columns could be processed in parallel using rayon (though dependencies between columns limit this)
-- **Property-based tests**: Additional testing coverage
 
 # References
 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
