@@ -135,6 +135,12 @@ pub struct CkmeansResult<T> {
 /// * `config` - Clustering configuration; use [`CkmeansConfig::default()`] for defaults
 ///   (k = 1..=9)
 ///
+/// # Errors
+/// - [`CkmeansErr::TooFewClassesError`] if `k_min` is 0.
+/// - [`CkmeansErr::InvalidRangeError`] if `k_min` is greater than `k_max`.
+/// - [`CkmeansErr::TooManyClassesError`] if `k_min` is greater than the number of data values.
+/// - [`CkmeansErr::NanError`] if `data` contains NaN.
+///
 /// # References
 /// 1. Song, M., & Zhong, H. (2020). Efficient weighted univariate clustering maps
 ///    outstanding dysregulated genomic zones in human cancers. Bioinformatics, 36(20), 5027-5036.
@@ -169,7 +175,7 @@ pub fn ckmeans_optimal<T: CkNum + Float>(
     let k_max = k_max.min(data.len() as u8);
 
     // Check for all-identical values
-    let sorted = algo::numeric_sort(data);
+    let sorted = algo::numeric_sort(data).ok_or(CkmeansErr::NanError)?;
     if sorted.first() == sorted.last() {
         let stats = algo::compute_cluster_stats(std::slice::from_ref(&sorted))
             .ok_or(CkmeansErr::ConversionError)?;
@@ -239,6 +245,11 @@ pub fn ckmeans_optimal<T: CkNum + Float>(
 /// # Notes
 /// Most common numeric (integer or floating point) types can be clustered
 ///
+/// # Errors
+/// - [`CkmeansErr::TooFewClassesError`] if `nclusters` is 0.
+/// - [`CkmeansErr::TooManyClassesError`] if `nclusters` is greater than the number of data values.
+/// - [`CkmeansErr::NanError`] if `data` contains NaN.
+///
 /// # References
 /// 1. [Wang, H., & Song, M. (2011). Ckmeans.1d.dp: Optimal k-means Clustering in One Dimension by Dynamic Programming. The R Journal, 3(2), 29.](https://doi.org/10.32614/RJ-2011-015)
 /// 2. <https://observablehq.com/@visionscarto/natural-breaks>
@@ -281,6 +292,9 @@ pub fn ckmeans<T: CkNum>(data: &[T], nclusters: u8) -> Result<Vec<Vec<T>>, Ckmea
 ///
 /// Returns: (sorted_data, cluster_ranges) where cluster_ranges contains (start, end) inclusive indices
 ///
+/// # Errors
+/// The same as [`ckmeans`].
+///
 /// # Example
 /// ```
 /// use ckmeans::ckmeans_indices;
@@ -301,7 +315,7 @@ pub fn ckmeans_indices<T: CkNum>(
         return Err(CkmeansErr::TooManyClassesError);
     }
     let nvalues = data.len();
-    let mut sorted = algo::numeric_sort(data);
+    let mut sorted = algo::numeric_sort(data).ok_or(CkmeansErr::NanError)?;
     // we'll use this as the maximum number of clusters
     let unique_count = algo::unique_count_sorted(&mut sorted);
     // if all of the input values are identical, there's one cluster

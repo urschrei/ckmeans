@@ -11,6 +11,7 @@ pub enum CkmeansErr {
     HighWindowError,
     InfallibleError,
     InvalidRangeError,
+    NanError,
 }
 
 impl Display for CkmeansErr {
@@ -39,6 +40,9 @@ impl Display for CkmeansErr {
             }
             CkmeansErr::InvalidRangeError => {
                 write!(f, "k_min must be less than or equal to k_max")
+            }
+            CkmeansErr::NanError => {
+                write!(f, "The input data contains NaN, which cannot be clustered")
             }
         }
     }

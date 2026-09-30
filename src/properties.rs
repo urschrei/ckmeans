@@ -3,7 +3,9 @@
 use hegel::TestCase;
 use hegel::generators::{self as gs, Generator, PrintableGenerator};
 
-use crate::{CkNum, CkmeansErr, ckmeans, ckmeans_indices};
+use crate::{
+    CkNum, CkmeansConfig, CkmeansErr, ckmeans, ckmeans_indices, ckmeans_optimal, roundbreaks,
+};
 
 /// Largest input the structural properties draw.
 const MAX_LEN: usize = 60;
@@ -142,3 +144,68 @@ structural_properties!(
     u8,
     hegel::one_of!(gs::integers::<u8>(), gs::integers::<u8>().max_value(8))
 );
+
+/// Every entry point rejects input that contains NaN. `$t` is a float type.
+macro_rules! nan_properties {
+    ($name:ident, $t:ty) => {
+        mod $name {
+            use super::*;
+
+            /// Draw data (infinities included) and insert one to three NaNs of either
+            /// sign at drawn positions.
+            fn draw_data_with_nan(tc: &TestCase) -> Vec<$t> {
+                let mut data =
+                    tc.draw(gs::vecs(gs::floats::<$t>().allow_nan(false)).max_size(MAX_LEN));
+                let count = tc.draw(gs::integers::<usize>().min_value(1).max_value(3));
+                for _ in 0..count {
+                    let position = tc.draw(gs::integers::<usize>().max_value(data.len()));
+                    let nan = tc.draw(gs::sampled_from(vec![<$t>::NAN, -<$t>::NAN]));
+                    data.insert(position, nan);
+                }
+                data
+            }
+
+            #[hegel::test(test_cases = 1000)]
+            fn ckmeans_indices_rejects_nan(tc: TestCase) {
+                let data = draw_data_with_nan(&tc);
+                let k = draw_k(&tc, data.len());
+                let Err(CkmeansErr::NanError) = ckmeans_indices(&data, k) else {
+                    panic!("NaN input was not rejected with NanError");
+                };
+            }
+
+            #[hegel::test(test_cases = 1000)]
+            fn ckmeans_rejects_nan(tc: TestCase) {
+                let data = draw_data_with_nan(&tc);
+                let k = draw_k(&tc, data.len());
+                let Err(CkmeansErr::NanError) = ckmeans(&data, k) else {
+                    panic!("NaN input was not rejected with NanError");
+                };
+            }
+
+            #[hegel::test(test_cases = 1000)]
+            fn ckmeans_optimal_rejects_nan(tc: TestCase) {
+                let data = draw_data_with_nan(&tc);
+                let k_min = draw_k(&tc, data.len());
+                let k_max = tc.draw(gs::integers::<u8>().min_value(k_min));
+                let Err(CkmeansErr::NanError) =
+                    ckmeans_optimal(&data, CkmeansConfig { k_min, k_max })
+                else {
+                    panic!("NaN input was not rejected with NanError");
+                };
+            }
+
+            #[hegel::test(test_cases = 1000)]
+            fn roundbreaks_rejects_nan(tc: TestCase) {
+                let data = draw_data_with_nan(&tc);
+                let k = draw_k(&tc, data.len());
+                let Err(CkmeansErr::NanError) = roundbreaks(&data, k) else {
+                    panic!("NaN input was not rejected with NanError");
+                };
+            }
+        }
+    };
+}
+
+nan_properties!(f64_nan, f64);
+nan_properties!(f32_nan, f32);
