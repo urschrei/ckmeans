@@ -260,7 +260,7 @@ pub(crate) fn compute_cluster_stats<T: CkNum>(clusters: &[Vec<T>]) -> Option<Vec
             let size = cluster.len();
             let n = T::from_usize(size)?;
             // Sum the offsets from the first value, not the values. Then a
-            // cluster of equal values gets that value as its centre. The cluster
+            // cluster of equal finite values gets that value as its centre. The cluster
             // is sorted: rounding can push the centre above the last value, so
             // clamp it.
             let (&low, &high) = (cluster.first()?, cluster.last()?);

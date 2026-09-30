@@ -140,6 +140,11 @@ structural_properties!(
     )
 );
 structural_properties!(
+    u64_elements,
+    u64,
+    hegel::one_of!(gs::integers::<u64>(), gs::integers::<u64>().max_value(8))
+);
+structural_properties!(
     u8_elements,
     u8,
     hegel::one_of!(gs::integers::<u8>(), gs::integers::<u8>().max_value(8))
@@ -410,6 +415,11 @@ mod relations {
         );
     }
 
+    /// The domain is integers up to 2^24, where the costs are exact. Over all
+    /// finite floats this property fails: for `[-94906266.0, 0.0, 0.0, 1.0]`
+    /// and k = 3, ckmeans returns `[[-94906266.0], [0.0], [0.0, 1.0]]`. That
+    /// clustering costs 0.5 more than the optimum, against a total of about
+    /// 6.7e15: the difference is below f64 resolution in the cumulative sums.
     #[hegel::test(test_cases = 2000)]
     fn equal_values_share_a_cluster(tc: TestCase) {
         let data = draw_data(&tc);
@@ -431,7 +441,9 @@ macro_rules! optimal_properties {
             use super::*;
 
             /// Values in a range where BIC terms stay finite, mixed with a small
-            /// pool of values so that ties and duplicates occur often.
+            /// pool of values so that ties and duplicates occur often. Properties
+            /// that compare or require BIC values use this range; the others use
+            /// `draw_any_data`.
             fn element() -> impl PrintableGenerator<$t> {
                 hegel::one_of!(
                     gs::floats::<$t>().min_value(-1e3).max_value(1e3),
@@ -453,6 +465,20 @@ macro_rules! optimal_properties {
                 tc.draw(gs::vecs(element()).min_size(len).max_size(len))
             }
 
+            /// Like `draw_data`, over every value except NaN. BIC values can be
+            /// NaN or infinite for these inputs.
+            fn draw_any_data(tc: &TestCase) -> Vec<$t> {
+                let len = draw_len(tc);
+                tc.draw(
+                    gs::vecs(hegel::one_of!(
+                        gs::floats::<$t>().allow_nan(false),
+                        gs::integers::<u8>().max_value(8).map(<$t>::from),
+                    ))
+                    .min_size(len)
+                    .max_size(len),
+                )
+            }
+
             /// Draw a valid configuration: `1 <= k_min <= distinct values`, and
             /// `k_max` up to 12 above `k_min`.
             fn draw_config(tc: &TestCase, data: &[$t]) -> CkmeansConfig {
@@ -466,7 +492,7 @@ macro_rules! optimal_properties {
 
             #[hegel::test(test_cases = 500)]
             fn clusters_match_ckmeans_at_chosen_k(tc: TestCase) {
-                let data = draw_data(&tc);
+                let data = draw_any_data(&tc);
                 let config = draw_config(&tc, &data);
                 let result = ckmeans_optimal(&data, config).unwrap();
                 assert_eq!(result.clusters, ckmeans(&data, result.k).unwrap());
@@ -509,7 +535,6 @@ macro_rules! optimal_properties {
                 let config = draw_config(&tc, &data);
                 let result = ckmeans_optimal(&data, config).unwrap();
                 assert_eq!(result.clusters.len(), usize::from(result.k));
-                assert_eq!(result.clusters.concat(), sorted(&data));
             }
 
             #[hegel::test(test_cases = 500)]
@@ -536,9 +561,19 @@ macro_rules! optimal_properties {
                 }
             }
 
+            /// Finite values only: for a cluster with an infinite value, the
+            /// centre and withinss contain `inf - inf` and are NaN.
             #[hegel::test(test_cases = 500)]
             fn stats_describe_clusters(tc: TestCase) {
-                let data = draw_data(&tc);
+                let len = draw_len(&tc);
+                let data = tc.draw(
+                    gs::vecs(hegel::one_of!(
+                        gs::floats::<$t>().allow_nan(false).allow_infinity(false),
+                        element(),
+                    ))
+                    .min_size(len)
+                    .max_size(len),
+                );
                 let config = draw_config(&tc, &data);
                 let result = ckmeans_optimal(&data, config).unwrap();
                 assert_eq!(result.stats.len(), result.clusters.len());
@@ -617,7 +652,14 @@ macro_rules! roundbreaks_properties {
 
             #[hegel::test(test_cases = 2000)]
             fn one_break_between_each_pair_of_classes(tc: TestCase) {
-                let data = tc.draw(data());
+                let data = tc.draw(
+                    gs::vecs(hegel::one_of!(
+                        gs::floats::<$t>().allow_nan(false),
+                        element()
+                    ))
+                    .min_size(1)
+                    .max_size(MAX_LEN),
+                );
                 let k = draw_k(&tc, data.len());
                 let breaks = roundbreaks(&data, k).unwrap();
                 let classes = ckmeans(&data, k).unwrap();
@@ -646,7 +688,6 @@ macro_rules! roundbreaks_properties {
                 let k = draw_k(&tc, data.len());
                 let breaks = roundbreaks(&data, k).unwrap();
                 let classes = ckmeans(&data, k).unwrap();
-                assert_eq!(breaks.len(), classes.len() - 1);
                 for (b, pair) in breaks.iter().zip(classes.windows(2)) {
                     let (last, first) = (*pair[0].last().unwrap(), pair[1][0]);
                     // Where cost differences are below float resolution, ckmeans
@@ -707,7 +748,8 @@ macro_rules! roundbreaks_properties {
 roundbreaks_properties!(f64_roundbreaks, f64, 1000.0, 1e-9);
 roundbreaks_properties!(f32_roundbreaks, f32, 10.0, 1e-4);
 
-/// Scale probe on large inputs. Run with `cargo nextest r --run-ignored only`.
+/// Scale probe on large inputs. Run the timing test with
+/// `cargo nextest r --run-ignored only`.
 mod scale {
     use super::*;
     use std::time::{Duration, Instant};
@@ -745,7 +787,6 @@ mod scale {
     }
 
     #[test]
-    #[ignore = "scale probe"]
     fn ckmeans_on_100k_values_with_50_clusters() {
         let data = synthetic(100_000, 50);
         let clusters = ckmeans(&data, 50).unwrap();
@@ -753,7 +794,6 @@ mod scale {
     }
 
     #[test]
-    #[ignore = "scale probe"]
     fn ckmeans_on_1m_values_with_5_clusters() {
         let data = synthetic(1_000_000, 5);
         let clusters = ckmeans(&data, 5).unwrap();
@@ -761,7 +801,6 @@ mod scale {
     }
 
     #[test]
-    #[ignore = "scale probe"]
     fn ckmeans_optimal_on_100k_values() {
         let data = synthetic(100_000, 6);
         let result = ckmeans_optimal(&data, CkmeansConfig::default()).unwrap();
@@ -771,9 +810,10 @@ mod scale {
     }
 
     /// O(kn log n) predicts a ratio near 4.3 when n grows by a factor of 4;
-    /// quadratic growth gives 16.
+    /// quadratic growth gives 16. Ignored by default because other tests
+    /// running in parallel distort the timings.
     #[test]
-    #[ignore = "scale probe"]
+    #[ignore = "timing-sensitive"]
     fn ckmeans_time_grows_close_to_linearly() {
         let small = time_ckmeans(&synthetic(100_000, 20), 20);
         let large = time_ckmeans(&synthetic(400_000, 20), 20);
