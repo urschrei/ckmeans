@@ -469,6 +469,19 @@ macro_rules! optimal_properties {
                 assert_eq!(result.clusters.len(), usize::from(result.k));
             }
 
+            #[hegel::test(test_cases = 1000)]
+            fn cluster_count_equals_chosen_k_for_any_values(tc: TestCase) {
+                let data = tc.draw(
+                    gs::vecs(gs::floats::<$t>().allow_nan(false))
+                        .min_size(1)
+                        .max_size(MAX_LEN),
+                );
+                let config = draw_config(&tc, &data);
+                let result = ckmeans_optimal(&data, config).unwrap();
+                assert_eq!(result.clusters.len(), usize::from(result.k));
+                assert_eq!(result.clusters.concat(), sorted(&data));
+            }
+
             #[hegel::test(test_cases = 500)]
             fn chosen_k_has_first_minimum_bic(tc: TestCase) {
                 let data = draw_data(&tc);
