@@ -8,6 +8,36 @@
 #include <stdlib.h>
 
 /**
+ * Status of a [`ckmeans_ffi`] call.
+ */
+typedef enum CkmeansStatus {
+    /**
+     * The call succeeded.
+     */
+    CkmeansStatus_Ok = 0,
+    /**
+     * `classes` is 0.
+     */
+    CkmeansStatus_TooFewClasses = 1,
+    /**
+     * `classes` is greater than the number of data values.
+     */
+    CkmeansStatus_TooManyClasses = 2,
+    /**
+     * The data contains NaN.
+     */
+    CkmeansStatus_NanInput = 3,
+    /**
+     * The data pointer is null and the length is not 0.
+     */
+    CkmeansStatus_NullData = 4,
+    /**
+     * An internal error occurred.
+     */
+    CkmeansStatus_InternalError = 5,
+} CkmeansStatus;
+
+/**
  * Wrapper for a void pointer to a sequence of [`InternalArray`]s, and the sequence length. Used for FFI.
  *
  * Each sequence entry represents a single [ckmeans] result class.
@@ -27,21 +57,31 @@ typedef struct ExternalArray {
 } ExternalArray;
 
 /**
- * An FFI wrapper for [ckmeans]. Data returned by this function **must** be freed by calling
- * [`drop_ckmeans_result`] before exiting.
+ * An FFI wrapper for [ckmeans].
+ *
+ * On success, the function writes [`CkmeansStatus::Ok`] to `status` and returns the clusters. On
+ * failure, it writes the error to `status` and returns a [`WrapperArray`] with a null `data`
+ * pointer and a `len` of 0. `status` can be null. The function does not panic across the FFI
+ * boundary.
+ *
+ * Data returned by this function **must** be freed by calling [`drop_ckmeans_result`].
  *
  * # Safety
  *
- * This function is unsafe because it accesses a raw pointer which could contain arbitrary data
+ * - If `data.data` is not null, it must point to `data.len` initialised, aligned `f64` values.
+ * - If `status` is not null, it must point to memory that is valid for a write of a
+ *   [`CkmeansStatus`].
  */
 struct WrapperArray ckmeans_ffi(struct ExternalArray data,
-                                unsigned char classes);
+                                unsigned char classes,
+                                enum CkmeansStatus *status);
 
 /**
- * Drop data returned by [`ckmeans_ffi`].
+ * Drop data returned by [`ckmeans_ffi`]. A result with a null `data` pointer is ignored.
  *
  * # Safety
  *
- * This function is unsafe because it accesses a raw pointer which could contain arbitrary data
+ * `result` must be a value returned by [`ckmeans_ffi`], and it must not be dropped more than
+ * once.
  */
 void drop_ckmeans_result(struct WrapperArray result);

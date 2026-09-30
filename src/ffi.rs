@@ -4,10 +4,45 @@ use libc::c_uchar;
 use libc::c_void;
 use libc::size_t;
 use std::f64;
+use std::panic;
 use std::ptr;
 use std::slice;
 
+use crate::CkmeansErr;
 use crate::ckmeans;
+
+/// Status of a [`ckmeans_ffi`] call.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CkmeansStatus {
+    /// The call succeeded.
+    Ok = 0,
+    /// `classes` is 0.
+    TooFewClasses = 1,
+    /// `classes` is greater than the number of data values.
+    TooManyClasses = 2,
+    /// The data contains NaN.
+    NanInput = 3,
+    /// The data pointer is null and the length is not 0.
+    NullData = 4,
+    /// An internal error occurred.
+    InternalError = 5,
+}
+
+impl From<&CkmeansErr> for CkmeansStatus {
+    fn from(err: &CkmeansErr) -> Self {
+        match err {
+            CkmeansErr::TooFewClassesError => CkmeansStatus::TooFewClasses,
+            CkmeansErr::TooManyClassesError => CkmeansStatus::TooManyClasses,
+            CkmeansErr::NanError => CkmeansStatus::NanInput,
+            CkmeansErr::ConversionError
+            | CkmeansErr::LowWindowError
+            | CkmeansErr::HighWindowError
+            | CkmeansErr::InfallibleError
+            | CkmeansErr::InvalidRangeError => CkmeansStatus::InternalError,
+        }
+    }
+}
 
 /// Wrapper for a void pointer to a sequence of [`InternalArray`]s, and the sequence length. Used for FFI.
 ///
@@ -34,11 +69,18 @@ pub struct ExternalArray {
     pub len: size_t,
 }
 
-/// We don't need to take ownership of incoming data to be clustered: that happens in `CkMeans`
-impl From<ExternalArray> for &[f64] {
-    fn from(arr: ExternalArray) -> Self {
-        unsafe { slice::from_raw_parts(arr.data.cast(), arr.len) }
+/// Borrow the values of an [`ExternalArray`] without taking ownership. Returns
+/// `None` if the data pointer is null and the length is not 0.
+///
+/// # Safety
+///
+/// If `arr.data` is not null, it must point to `arr.len` initialised, aligned
+/// `f64` values that stay valid and unchanged for `'a`.
+unsafe fn external_slice<'a>(arr: &ExternalArray) -> Option<&'a [f64]> {
+    if arr.data.is_null() {
+        return (arr.len == 0).then_some(&[]);
     }
+    Some(unsafe { slice::from_raw_parts(arr.data.cast(), arr.len) })
 }
 
 // Convert individual Ckmeans result classes into things that can be leaked across the FFI boundary
@@ -103,24 +145,59 @@ impl From<WrapperArray> for Vec<Vec<f64>> {
     }
 }
 
-/// An FFI wrapper for [ckmeans]. Data returned by this function **must** be freed by calling
-/// [`drop_ckmeans_result`] before exiting.
+/// An FFI wrapper for [ckmeans].
+///
+/// On success, the function writes [`CkmeansStatus::Ok`] to `status` and returns the clusters. On
+/// failure, it writes the error to `status` and returns a [`WrapperArray`] with a null `data`
+/// pointer and a `len` of 0. `status` can be null. The function does not panic across the FFI
+/// boundary.
+///
+/// Data returned by this function **must** be freed by calling [`drop_ckmeans_result`].
 ///
 /// # Safety
 ///
-/// This function is unsafe because it accesses a raw pointer which could contain arbitrary data
+/// - If `data.data` is not null, it must point to `data.len` initialised, aligned `f64` values.
+/// - If `status` is not null, it must point to memory that is valid for a write of a
+///   [`CkmeansStatus`].
 #[unsafe(no_mangle)]
-pub extern "C" fn ckmeans_ffi(data: ExternalArray, classes: c_uchar) -> WrapperArray {
-    ckmeans(data.into(), classes).unwrap().into()
+pub unsafe extern "C" fn ckmeans_ffi(
+    data: ExternalArray,
+    classes: c_uchar,
+    status: *mut CkmeansStatus,
+) -> WrapperArray {
+    let outcome = match unsafe { external_slice(&data) } {
+        None => Err(CkmeansStatus::NullData),
+        Some(values) => panic::catch_unwind(|| ckmeans(values, classes))
+            .map_err(|_| CkmeansStatus::InternalError)
+            .and_then(|result| result.map_err(|err| CkmeansStatus::from(&err))),
+    };
+    let (code, result) = match outcome {
+        Ok(clusters) => (CkmeansStatus::Ok, clusters.into()),
+        Err(code) => (
+            code,
+            WrapperArray {
+                data: ptr::null(),
+                len: 0,
+            },
+        ),
+    };
+    if !status.is_null() {
+        unsafe { status.write(code) };
+    }
+    result
 }
 
-/// Drop data returned by [`ckmeans_ffi`].
+/// Drop data returned by [`ckmeans_ffi`]. A result with a null `data` pointer is ignored.
 ///
 /// # Safety
 ///
-/// This function is unsafe because it accesses a raw pointer which could contain arbitrary data
+/// `result` must be a value returned by [`ckmeans_ffi`], and it must not be dropped more than
+/// once.
 #[unsafe(no_mangle)]
-pub extern "C" fn drop_ckmeans_result(result: WrapperArray) {
+pub unsafe extern "C" fn drop_ckmeans_result(result: WrapperArray) {
+    if result.data.is_null() {
+        return;
+    }
     let _: Vec<Vec<f64>> = result.into();
 }
 
@@ -130,13 +207,35 @@ mod tests {
     use hegel::TestCase;
     use hegel::generators as gs;
 
+    /// Borrow `data` as an [`ExternalArray`]. `From<Vec<f64>>` leaks the vector.
+    fn borrow(data: &[f64]) -> ExternalArray {
+        ExternalArray {
+            data: data.as_ptr().cast(),
+            len: data.len(),
+        }
+    }
+
+    /// Call [`ckmeans_ffi`] and return the status and the result.
+    fn call(data: ExternalArray, classes: u8) -> (CkmeansStatus, WrapperArray) {
+        let mut status = CkmeansStatus::InternalError;
+        let result = unsafe { ckmeans_ffi(data, classes, &mut status) };
+        (status, result)
+    }
+
+    /// Assert that `result` is the empty error result, then drop it.
+    fn assert_empty(result: WrapperArray) {
+        assert!(result.data.is_null());
+        assert_eq!(result.len, 0);
+        unsafe { drop_ckmeans_result(result) };
+    }
+
     #[test]
     fn ffi() {
         let i = vec![
             1f64, 12., 13., 14., 15., 16., 2., 2., 3., 5., 7., 1., 2., 5., 7., 1., 5., 82., 1.,
             1.3, 1.1, 78.,
         ];
-        let res: Vec<Vec<f64>> = ckmeans_ffi(i.into(), 3).into();
+        let res: Vec<Vec<f64>> = unsafe { ckmeans_ffi(borrow(&i), 3, ptr::null_mut()) }.into();
         let expected = vec![
             vec![
                 1.0, 1.0, 1.0, 1.0, 1.1, 1.3, 2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0, 7.0, 7.0,
@@ -156,12 +255,64 @@ mod tests {
         );
         let max = u8::try_from(data.len()).unwrap_or(u8::MAX);
         let k = tc.draw(gs::integers::<u8>().min_value(1).max_value(max));
-        // Borrow the input: `From<Vec<f64>> for ExternalArray` leaks the vector.
-        let external = ExternalArray {
-            data: data.as_ptr().cast(),
-            len: data.len(),
-        };
-        let result: Vec<Vec<f64>> = ckmeans_ffi(external, k).into();
+        let (status, result) = call(borrow(&data), k);
+        assert_eq!(status, CkmeansStatus::Ok);
+        let result: Vec<Vec<f64>> = result.into();
         assert_eq!(result, ckmeans(&data, k).unwrap());
+    }
+
+    #[hegel::test(test_cases = 1000)]
+    fn ffi_reports_nan_input(tc: TestCase) {
+        let mut data = tc.draw(gs::vecs(gs::floats::<f64>().allow_nan(false)).max_size(60));
+        let position = tc.draw(gs::integers::<usize>().max_value(data.len()));
+        data.insert(position, f64::NAN);
+        let max = u8::try_from(data.len()).unwrap_or(u8::MAX);
+        let k = tc.draw(gs::integers::<u8>().min_value(1).max_value(max));
+        let (status, result) = call(borrow(&data), k);
+        assert_eq!(status, CkmeansStatus::NanInput);
+        assert_empty(result);
+    }
+
+    #[hegel::test(test_cases = 500)]
+    fn ffi_reports_zero_classes(tc: TestCase) {
+        let data = tc.draw(gs::vecs(gs::floats::<f64>()).max_size(60));
+        let (status, result) = call(borrow(&data), 0);
+        assert_eq!(status, CkmeansStatus::TooFewClasses);
+        assert_empty(result);
+    }
+
+    #[hegel::test(test_cases = 500)]
+    fn ffi_reports_too_many_classes(tc: TestCase) {
+        let data = tc.draw(gs::vecs(gs::floats::<f64>().allow_nan(false)).max_size(60));
+        let k = tc.draw(gs::integers::<u8>().min_value(data.len() as u8 + 1));
+        let (status, result) = call(borrow(&data), k);
+        assert_eq!(status, CkmeansStatus::TooManyClasses);
+        assert_empty(result);
+    }
+
+    #[hegel::test(test_cases = 500)]
+    fn ffi_reports_null_data(tc: TestCase) {
+        let len = tc.draw(gs::integers::<usize>().min_value(1));
+        let k = tc.draw(gs::integers::<u8>());
+        let external = ExternalArray {
+            data: ptr::null(),
+            len,
+        };
+        let (status, result) = call(external, k);
+        assert_eq!(status, CkmeansStatus::NullData);
+        assert_empty(result);
+    }
+
+    #[hegel::test(test_cases = 500)]
+    fn ffi_treats_null_empty_data_as_empty(tc: TestCase) {
+        let k = tc.draw(gs::integers::<u8>());
+        let external = ExternalArray {
+            data: ptr::null(),
+            len: 0,
+        };
+        let (status, result) = call(external, k);
+        let expected = CkmeansStatus::from(&ckmeans::<f64>(&[], k).unwrap_err());
+        assert_eq!(status, expected);
+        assert_empty(result);
     }
 }

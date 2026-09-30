@@ -61,7 +61,7 @@ Performance comes from the monotonicity of the optimal split point: the optimal 
 Like the [original R implementation](https://cran.r-project.org/web/packages/Ckmeans.1d.dp/index.html), this implementation can automatically determine the optimal number of clusters using `ckmeans_optimal`, which evaluates candidates using the Bayesian Information Criterion (BIC). It also provides the `roundbreaks` method to aid labelling.
 
 # FFI
-A C-compatible FFI implementation is available, along with libraries for major platforms. See the [header file](include/header.h) and a basic C example in the [`examples`](examples) folder. The FFI functions have been verified not to leak memory (see comment in example).
+A C-compatible FFI implementation is available, along with libraries for major platforms. See the [header file](include/header.h) and a basic C example in the [`examples`](examples) folder. The FFI functions have been verified not to leak memory (see comment in example). `ckmeans_ffi` reports errors (such as NaN input or an invalid number of classes) through a `CkmeansStatus` out-parameter and returns a result with a `NULL` data pointer; it does not abort the calling process.
 
 # WASM
 A WASM module is also available, giving access to both `ckmeans` and `roundbreaks`. Generate the module using [`wasm-bindgen`](https://rustwasm.github.io/docs/wasm-bindgen/) and the appropriate target, or use the [NPM package](https://www.npmjs.com/package/@urschrei/ckmeans).
