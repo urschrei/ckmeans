@@ -146,17 +146,34 @@ pub(crate) fn fill_matrices<T: CkNum>(
     let nvalues = data.len();
     let mut sumx = Vec::with_capacity(nvalues);
     let mut sumxsq = Vec::with_capacity(nvalues);
+    // Scale by a power of two so that the largest magnitude is near 1. Then the
+    // squared deviations cannot overflow for finite input. Scaling by a power of
+    // two is exact, and it multiplies every cost by the same factor, so it does
+    // not change the split points. The input is sorted, so the largest magnitude
+    // is at one of the ends. `to_f64` is the only fallible step; it cannot fail
+    // for the standard numeric types but is propagated as `None`
+    // (ConversionError) to be safe.
+    let max_abs = data[0]
+        .to_f64()?
+        .abs()
+        .max(data[nvalues - 1].to_f64()?.abs());
+    let scale = if max_abs > 0.0 && max_abs.is_finite() {
+        // Limit the scale to 2^1022 so that it stays finite for subnormal input.
+        let exponent = (max_abs.log2().floor() as i32).max(f64::MIN_EXP - 1);
+        2f64.powi(-exponent)
+    } else {
+        1.0
+    };
     // Shift by a central value to improve the conditioning of the cumulative
-    // sums. `to_f64` is the only fallible step; it cannot fail for the standard
-    // numeric types but is propagated as `None` (ConversionError) to be safe.
-    let shift = data[nvalues / 2].to_f64()?;
+    // sums.
+    let shift = data[nvalues / 2].to_f64()? * scale;
 
     // Pre-compute sumx and sumxsq in f64
-    let first = data[0].to_f64()? - shift;
+    let first = data[0].to_f64()? * scale - shift;
     sumx.push(first);
     sumxsq.push(first * first);
     for i in 1..nvalues {
-        let shifted = data[i].to_f64()? - shift;
+        let shifted = data[i].to_f64()? * scale - shift;
         sumx.push(sumx[i - 1] + shifted);
         sumxsq.push(sumxsq[i - 1] + shifted * shifted);
     }

@@ -326,6 +326,36 @@ mod optimality {
     }
 }
 
+/// Relations that hold for float input of any finite magnitude.
+mod float_relations {
+    use super::*;
+
+    /// Multiples of 0.001 up to 1000 in magnitude: every non-zero value is at
+    /// least 2^-10 and at most 2^10 in magnitude, so scaling by 2^m for
+    /// |m| <= 1000 stays in the normal range.
+    fn element() -> impl PrintableGenerator<f64> {
+        hegel::one_of!(
+            gs::integers::<i32>()
+                .min_value(-1_000_000)
+                .max_value(1_000_000)
+                .map(|x| f64::from(x) / 1000.0),
+            gs::integers::<u8>().max_value(8).map(f64::from),
+        )
+    }
+
+    #[hegel::test(test_cases = 2000)]
+    fn scaling_by_a_power_of_two_does_not_change_ranges(tc: TestCase) {
+        let data = tc.draw(gs::vecs(element()).min_size(1).max_size(MAX_LEN));
+        let k = draw_k(&tc, data.len());
+        let exponent = tc.draw(gs::integers::<i32>().min_value(-1000).max_value(1000));
+        let factor = 2f64.powi(exponent);
+        let scaled: Vec<f64> = data.iter().map(|x| x * factor).collect();
+        let (_, ranges) = ckmeans_indices(&data, k).unwrap();
+        let (_, scaled_ranges) = ckmeans_indices(&scaled, k).unwrap();
+        assert_eq!(ranges, scaled_ranges);
+    }
+}
+
 /// Relations between clusterings of related inputs.
 mod relations {
     use super::*;
