@@ -38,6 +38,8 @@ mod algo;
 mod errors;
 #[cfg(not(target_arch = "wasm32"))]
 mod ffi;
+#[cfg(test)]
+mod properties;
 mod wasm;
 
 pub use crate::errors::CkmeansErr;
