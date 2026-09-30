@@ -393,3 +393,119 @@ mod relations {
         }
     }
 }
+
+/// Properties of `ckmeans_optimal`. `$t` is a float type.
+macro_rules! optimal_properties {
+    ($name:ident, $t:ty) => {
+        mod $name {
+            use super::*;
+
+            /// Values in a range where BIC terms stay finite, mixed with a small
+            /// pool of values so that ties and duplicates occur often.
+            fn element() -> impl PrintableGenerator<$t> {
+                hegel::one_of!(
+                    gs::floats::<$t>().min_value(-1e3).max_value(1e3),
+                    gs::integers::<u8>().max_value(8).map(<$t>::from),
+                )
+            }
+
+            /// Draw a length that is either short or near 256, where a `u8`
+            /// conversion of the length wraps round.
+            fn draw_len(tc: &TestCase) -> usize {
+                tc.draw(hegel::one_of!(
+                    gs::integers::<usize>().min_value(1).max_value(40),
+                    gs::integers::<usize>().min_value(250).max_value(270),
+                ))
+            }
+
+            fn draw_data(tc: &TestCase) -> Vec<$t> {
+                let len = draw_len(tc);
+                tc.draw(gs::vecs(element()).min_size(len).max_size(len))
+            }
+
+            /// Draw a valid configuration: `1 <= k_min <= distinct values`, and
+            /// `k_max` up to 12 above `k_min`.
+            fn draw_config(tc: &TestCase, data: &[$t]) -> CkmeansConfig {
+                let k_min = draw_k(tc, distinct_count(data));
+                let span = tc.draw(gs::integers::<u8>().max_value(12));
+                CkmeansConfig {
+                    k_min,
+                    k_max: k_min.saturating_add(span),
+                }
+            }
+
+            #[hegel::test(test_cases = 500)]
+            fn clusters_match_ckmeans_at_chosen_k(tc: TestCase) {
+                let data = draw_data(&tc);
+                let config = draw_config(&tc, &data);
+                let result = ckmeans_optimal(&data, config).unwrap();
+                assert_eq!(result.clusters, ckmeans(&data, result.k).unwrap());
+            }
+
+            #[hegel::test(test_cases = 500)]
+            fn chosen_k_has_first_minimum_bic(tc: TestCase) {
+                let data = draw_data(&tc);
+                let config = draw_config(&tc, &data);
+                let result = ckmeans_optimal(&data, config).unwrap();
+                let (best_k, _) = result
+                    .bic
+                    .iter()
+                    .copied()
+                    .reduce(|best, next| if next.1 < best.1 { next } else { best })
+                    .unwrap();
+                assert_eq!(result.k, best_k, "BIC values: {:?}", result.bic);
+            }
+
+            #[hegel::test(test_cases = 500)]
+            fn bic_values_are_finite(tc: TestCase) {
+                let data = draw_data(&tc);
+                let config = draw_config(&tc, &data);
+                let result = ckmeans_optimal(&data, config).unwrap();
+                for &(k, bic) in &result.bic {
+                    assert!(bic.is_finite(), "BIC for k = {k} is {bic}");
+                }
+            }
+
+            #[hegel::test(test_cases = 500)]
+            fn stats_describe_clusters(tc: TestCase) {
+                let data = draw_data(&tc);
+                let config = draw_config(&tc, &data);
+                let result = ckmeans_optimal(&data, config).unwrap();
+                assert_eq!(result.stats.len(), result.clusters.len());
+                for (stat, cluster) in result.stats.iter().zip(&result.clusters) {
+                    assert_eq!(stat.size, cluster.len());
+                    let (lo, hi) = (cluster[0], cluster[cluster.len() - 1]);
+                    assert!(
+                        lo <= stat.center && stat.center <= hi,
+                        "{stat:?} {cluster:?}"
+                    );
+                    assert!(stat.withinss >= 0.0, "{stat:?}");
+                }
+            }
+
+            #[hegel::test(test_cases = 500)]
+            fn k_min_zero_is_rejected(tc: TestCase) {
+                let data = tc.draw(gs::vecs(element()).max_size(MAX_LEN));
+                let k_max = tc.draw(gs::integers::<u8>());
+                let config = CkmeansConfig { k_min: 0, k_max };
+                let Err(CkmeansErr::TooFewClassesError) = ckmeans_optimal(&data, config) else {
+                    panic!("k_min = 0 was not rejected with TooFewClassesError");
+                };
+            }
+
+            #[hegel::test(test_cases = 500)]
+            fn inverted_range_is_rejected(tc: TestCase) {
+                let data = tc.draw(gs::vecs(element()).max_size(MAX_LEN));
+                let k_min = tc.draw(gs::integers::<u8>().min_value(2));
+                let k_max = tc.draw(gs::integers::<u8>().min_value(1).max_value(k_min - 1));
+                let config = CkmeansConfig { k_min, k_max };
+                let Err(CkmeansErr::InvalidRangeError) = ckmeans_optimal(&data, config) else {
+                    panic!("k_min > k_max was not rejected with InvalidRangeError");
+                };
+            }
+        }
+    };
+}
+
+optimal_properties!(f64_optimal, f64);
+optimal_properties!(f32_optimal, f32);
