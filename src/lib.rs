@@ -172,7 +172,7 @@ pub fn ckmeans_optimal<T: CkNum + Float>(
     }
 
     // Cap k_max to data length
-    let k_max = k_max.min(data.len() as u8);
+    let k_max = u8::try_from(data.len()).map_or(k_max, |len| k_max.min(len));
 
     // Check for all-identical values
     let sorted = algo::numeric_sort(data).ok_or(CkmeansErr::NanError)?;
