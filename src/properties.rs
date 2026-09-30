@@ -325,3 +325,71 @@ mod optimality {
         }
     }
 }
+
+/// Relations between clusterings of related inputs.
+mod relations {
+    use super::*;
+
+    /// Largest magnitude that every tested element type (f32 included)
+    /// represents exactly.
+    const EXACT: i32 = 1 << 24;
+
+    fn element() -> impl PrintableGenerator<i32> {
+        hegel::one_of!(
+            gs::integers::<i32>().min_value(-EXACT).max_value(EXACT),
+            gs::integers::<i32>().min_value(-4).max_value(4),
+        )
+    }
+
+    fn draw_data(tc: &TestCase) -> Vec<i32> {
+        tc.draw(gs::vecs(element()).min_size(1).max_size(MAX_LEN))
+    }
+
+    #[hegel::test(test_cases = 2000)]
+    fn translation_does_not_change_ranges(tc: TestCase) {
+        let data = draw_data(&tc);
+        let k = draw_k(&tc, data.len());
+        let offset = tc.draw(gs::integers::<i32>().min_value(-EXACT).max_value(EXACT));
+        let shifted: Vec<i32> = data.iter().map(|x| x + offset).collect();
+        let (_, ranges) = ckmeans_indices(&data, k).unwrap();
+        let (_, shifted_ranges) = ckmeans_indices(&shifted, k).unwrap();
+        assert_eq!(ranges, shifted_ranges);
+    }
+
+    #[hegel::test(test_cases = 2000)]
+    fn element_types_agree_on_ranges(tc: TestCase) {
+        let data = draw_data(&tc);
+        let k = draw_k(&tc, data.len());
+        let as_i64: Vec<i64> = data.iter().map(|&x| i64::from(x)).collect();
+        let as_f64: Vec<f64> = data.iter().map(|&x| f64::from(x)).collect();
+        let as_f32: Vec<f32> = data.iter().map(|&x| x as f32).collect();
+        let (_, expected) = ckmeans_indices(&data, k).unwrap();
+        assert_eq!(ckmeans_indices(&as_i64, k).unwrap().1, expected, "i64");
+        assert_eq!(ckmeans_indices(&as_f64, k).unwrap().1, expected, "f64");
+        assert_eq!(ckmeans_indices(&as_f32, k).unwrap().1, expected, "f32");
+    }
+
+    #[hegel::test(test_cases = 2000)]
+    fn u8_agrees_with_f64_on_ranges(tc: TestCase) {
+        let data = tc.draw(gs::vecs(gs::integers::<u8>()).min_size(1).max_size(MAX_LEN));
+        let k = draw_k(&tc, data.len());
+        let as_f64: Vec<f64> = data.iter().map(|&x| f64::from(x)).collect();
+        assert_eq!(
+            ckmeans_indices(&data, k).unwrap().1,
+            ckmeans_indices(&as_f64, k).unwrap().1
+        );
+    }
+
+    #[hegel::test(test_cases = 2000)]
+    fn equal_values_share_a_cluster(tc: TestCase) {
+        let data = draw_data(&tc);
+        let k = draw_k(&tc, data.len());
+        let clusters = ckmeans(&data, k).unwrap();
+        for pair in clusters.windows(2) {
+            assert!(
+                pair[0].last() < pair[1].first(),
+                "equal values split across clusters: {clusters:?}"
+            );
+        }
+    }
+}
