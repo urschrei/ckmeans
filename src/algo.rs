@@ -205,6 +205,53 @@ pub(crate) fn fill_matrices<T: CkNum>(
     Some(())
 }
 
+/// Return the roundest number `b` with `low < b <= high`.
+///
+/// The function uses the largest power of ten that has a multiple in the
+/// interval, and returns the multiple nearest the midpoint. If no candidate is
+/// in the interval (for example because the gap is subnormal, a bound is
+/// infinite, or `low >= high`), it returns `high`. `None` is a failed numeric
+/// conversion.
+pub(crate) fn round_break<T: Float>(low: T, high: T) -> Option<T> {
+    if low >= high || !low.is_finite() || !high.is_finite() {
+        return Some(high);
+    }
+    let two = T::from(2.0)?;
+    let middle = low / two + high / two;
+    let coarsest = low.abs().max(high.abs()).log10().ceil().to_i32()?;
+    // The gap overflows to infinity only if it spans most of the float range.
+    let finest = (high - low)
+        .log10()
+        .floor()
+        .to_i32()
+        .map_or(coarsest, |e| e - 1);
+    for exponent in (finest..=coarsest).rev() {
+        if let Some(candidate) = nearest_multiple_in(low, high, middle, exponent) {
+            return Some(candidate);
+        }
+    }
+    Some(high)
+}
+
+/// Return the multiple of `10^exponent` nearest `middle` with
+/// `low < multiple <= high`, if one exists.
+fn nearest_multiple_in<T: Float>(low: T, high: T, middle: T, exponent: i32) -> Option<T> {
+    let ten = T::from(10.0)?;
+    // Divide by a positive power of ten for negative exponents, so that the
+    // result is the float nearest the decimal value.
+    let factor = ten.powi(exponent.abs());
+    if !factor.is_finite() {
+        return None;
+    }
+    let to_units = |x: T| if exponent < 0 { x * factor } else { x / factor };
+    let from_units = |k: T| if exponent < 0 { k / factor } else { k * factor };
+    let nearest = to_units(middle).round();
+    [nearest, nearest - T::one(), nearest + T::one()]
+        .into_iter()
+        .map(from_units)
+        .find(|&candidate| low < candidate && candidate <= high)
+}
+
 /// Compute per-cluster statistics (center, size, withinss) for a set of sorted clusters.
 pub(crate) fn compute_cluster_stats<T: CkNum>(clusters: &[Vec<T>]) -> Option<Vec<ClusterStats<T>>> {
     clusters

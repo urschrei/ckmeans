@@ -591,3 +591,118 @@ macro_rules! optimal_properties {
 
 optimal_properties!(f64_optimal, f64);
 optimal_properties!(f32_optimal, f32);
+
+/// Properties of `roundbreaks`. `$t` is a float type; `$scale` divides drawn
+/// integers to give values with a few decimal places, and `$tolerance` is the
+/// relative tolerance for "is a multiple of this power of ten".
+macro_rules! roundbreaks_properties {
+    ($name:ident, $t:ty, $scale:expr, $tolerance:expr) => {
+        mod $name {
+            use super::*;
+
+            /// Values with at most a few decimal places, mixed with a small pool.
+            fn element() -> impl PrintableGenerator<$t> {
+                hegel::one_of!(
+                    gs::integers::<i32>()
+                        .min_value(-1_000_000)
+                        .max_value(1_000_000)
+                        .map(|x| x as $t / $scale),
+                    gs::integers::<u8>().max_value(8).map(<$t>::from),
+                )
+            }
+
+            fn data() -> impl PrintableGenerator<Vec<$t>> {
+                gs::vecs(element()).min_size(1).max_size(MAX_LEN)
+            }
+
+            #[hegel::test(test_cases = 2000)]
+            fn one_break_between_each_pair_of_classes(tc: TestCase) {
+                let data = tc.draw(data());
+                let k = draw_k(&tc, data.len());
+                let breaks = roundbreaks(&data, k).unwrap();
+                let classes = ckmeans(&data, k).unwrap();
+                assert_eq!(breaks.len(), classes.len() - 1);
+            }
+
+            #[hegel::test(test_cases = 2000)]
+            fn breaks_separate_classes(tc: TestCase) {
+                let data = tc.draw(data());
+                let k = draw_k(&tc, data.len());
+                let breaks = roundbreaks(&data, k).unwrap();
+                let classes = ckmeans(&data, k).unwrap();
+                for (b, pair) in breaks.iter().zip(classes.windows(2)) {
+                    let (last, first) = (*pair[0].last().unwrap(), pair[1][0]);
+                    assert!(last < *b && *b <= first, "{b} not in ({last}, {first}]");
+                }
+            }
+
+            #[hegel::test(test_cases = 2000)]
+            fn breaks_separate_classes_for_any_values(tc: TestCase) {
+                let data = tc.draw(
+                    gs::vecs(gs::floats::<$t>().allow_nan(false))
+                        .min_size(1)
+                        .max_size(MAX_LEN),
+                );
+                let k = draw_k(&tc, data.len());
+                let breaks = roundbreaks(&data, k).unwrap();
+                let classes = ckmeans(&data, k).unwrap();
+                assert_eq!(breaks.len(), classes.len() - 1);
+                for (b, pair) in breaks.iter().zip(classes.windows(2)) {
+                    let (last, first) = (*pair[0].last().unwrap(), pair[1][0]);
+                    // Where cost differences are below float resolution, ckmeans
+                    // can put equal values in adjacent classes. No break is
+                    // then above `last`, and the break is `first`.
+                    if last == first {
+                        assert_eq!(*b, first);
+                    } else {
+                        assert!(last < *b && *b <= first, "{b} not in ({last}, {first}]");
+                    }
+                }
+            }
+
+            /// Every interval `(last, first]` with a gap of at least `10^e`
+            /// contains a multiple of `10^e`, so the break must be one.
+            #[hegel::test(test_cases = 2000)]
+            fn breaks_are_no_finer_than_the_gap(tc: TestCase) {
+                let data = tc.draw(data());
+                let k = draw_k(&tc, data.len());
+                let breaks = roundbreaks(&data, k).unwrap();
+                let classes = ckmeans(&data, k).unwrap();
+                for (b, pair) in breaks.iter().zip(classes.windows(2)) {
+                    let (last, first) = (*pair[0].last().unwrap(), pair[1][0]);
+                    let exponent = (first - last).log10().floor() as i32;
+                    let units = if exponent < 0 {
+                        *b * (10.0 as $t).powi(-exponent)
+                    } else {
+                        *b / (10.0 as $t).powi(exponent)
+                    };
+                    let error = (units - units.round()).abs();
+                    assert!(
+                        error <= $tolerance * units.abs().max(1.0),
+                        "{b} is not a multiple of 1e{exponent} (gap {last} to {first})"
+                    );
+                }
+            }
+
+            #[hegel::test(test_cases = 500)]
+            fn zero_classes_is_rejected(tc: TestCase) {
+                let data = tc.draw(gs::vecs(element()).max_size(MAX_LEN));
+                let Err(CkmeansErr::TooFewClassesError) = roundbreaks(&data, 0) else {
+                    panic!("k = 0 was not rejected with TooFewClassesError");
+                };
+            }
+
+            #[hegel::test(test_cases = 500)]
+            fn more_classes_than_values_is_rejected(tc: TestCase) {
+                let data = tc.draw(gs::vecs(element()).max_size(MAX_LEN));
+                let k = tc.draw(gs::integers::<u8>().min_value(data.len() as u8 + 1));
+                let Err(CkmeansErr::TooManyClassesError) = roundbreaks(&data, k) else {
+                    panic!("k = {k} > len = {} was not rejected", data.len());
+                };
+            }
+        }
+    };
+}
+
+roundbreaks_properties!(f64_roundbreaks, f64, 1000.0, 1e-9);
+roundbreaks_properties!(f32_roundbreaks, f32, 10.0, 1e-4);
