@@ -128,7 +128,9 @@ pub struct CkmeansResult<T> {
 /// Criterion (BIC) and return the clustering result with per-cluster statistics.
 ///
 /// This follows the approach of Song & Zhong (2020), evaluating each candidate k
-/// in the range `k_min..=k_max` and selecting the k that minimises BIC.
+/// in the range `k_min..=k_max` and selecting the k that minimises BIC. A
+/// clustering cannot have more clusters than there are distinct values, so
+/// `k_max` is capped at the number of distinct values in `data`.
 ///
 /// # Arguments
 /// * `data` - The input data to cluster
@@ -138,7 +140,8 @@ pub struct CkmeansResult<T> {
 /// # Errors
 /// - [`CkmeansErr::TooFewClassesError`] if `k_min` is 0.
 /// - [`CkmeansErr::InvalidRangeError`] if `k_min` is greater than `k_max`.
-/// - [`CkmeansErr::TooManyClassesError`] if `k_min` is greater than the number of data values.
+/// - [`CkmeansErr::TooManyClassesError`] if `k_min` is greater than the number of distinct
+///   values in `data`.
 /// - [`CkmeansErr::NanError`] if `data` contains NaN.
 ///
 /// # References
@@ -167,16 +170,17 @@ pub fn ckmeans_optimal<T: CkNum + Float>(
     if k_min > k_max {
         return Err(CkmeansErr::InvalidRangeError);
     }
-    if (k_min as usize) > data.len() {
+
+    let mut sorted = algo::numeric_sort(data).ok_or(CkmeansErr::NanError)?;
+    // Each cluster contains at least one distinct value, so the distinct count
+    // bounds the range of k.
+    let distinct = algo::unique_count_sorted(&mut sorted);
+    if (k_min as usize) > distinct {
         return Err(CkmeansErr::TooManyClassesError);
     }
+    let k_max = u8::try_from(distinct).map_or(k_max, |d| k_max.min(d));
 
-    // Cap k_max to data length
-    let k_max = u8::try_from(data.len()).map_or(k_max, |len| k_max.min(len));
-
-    // Check for all-identical values
-    let sorted = algo::numeric_sort(data).ok_or(CkmeansErr::NanError)?;
-    if sorted.first() == sorted.last() {
+    if distinct == 1 {
         let stats = algo::compute_cluster_stats(std::slice::from_ref(&sorted))
             .ok_or(CkmeansErr::ConversionError)?;
         return Ok(CkmeansResult {
@@ -790,8 +794,8 @@ mod tests {
         assert_eq!(result.k, 3);
         assert_eq!(result.clusters.len(), 3);
         assert_eq!(result.stats.len(), 3);
-        // BIC should have entries for k=1 through k=9
-        assert_eq!(result.bic.len(), 9);
+        // Three distinct values cap the evaluated range at k=1 through k=3
+        assert_eq!(result.bic.len(), 3);
     }
 
     #[test]

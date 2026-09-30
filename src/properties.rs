@@ -443,6 +443,33 @@ macro_rules! optimal_properties {
             }
 
             #[hegel::test(test_cases = 500)]
+            fn bic_covers_k_min_to_capped_k_max(tc: TestCase) {
+                let data = draw_data(&tc);
+                let config = draw_config(&tc, &data);
+                let result = ckmeans_optimal(&data, config).unwrap();
+                let cap = u8::try_from(distinct_count(&data)).unwrap_or(u8::MAX);
+                let expected: Vec<u8> = (config.k_min..=config.k_max.min(cap)).collect();
+                let evaluated: Vec<u8> = result.bic.iter().map(|&(k, _)| k).collect();
+                assert_eq!(evaluated, expected);
+            }
+
+            #[hegel::test(test_cases = 500)]
+            fn default_config_evaluates_up_to_nine(tc: TestCase) {
+                let data = draw_data(&tc);
+                let result = ckmeans_optimal(&data, CkmeansConfig::default()).unwrap();
+                let cap = u8::try_from(distinct_count(&data)).unwrap_or(u8::MAX);
+                assert_eq!(result.bic.len(), usize::from(cap.min(9)));
+            }
+
+            #[hegel::test(test_cases = 500)]
+            fn cluster_count_equals_chosen_k(tc: TestCase) {
+                let data = draw_data(&tc);
+                let config = draw_config(&tc, &data);
+                let result = ckmeans_optimal(&data, config).unwrap();
+                assert_eq!(result.clusters.len(), usize::from(result.k));
+            }
+
+            #[hegel::test(test_cases = 500)]
             fn chosen_k_has_first_minimum_bic(tc: TestCase) {
                 let data = draw_data(&tc);
                 let config = draw_config(&tc, &data);
@@ -501,6 +528,18 @@ macro_rules! optimal_properties {
                 let config = CkmeansConfig { k_min, k_max };
                 let Err(CkmeansErr::InvalidRangeError) = ckmeans_optimal(&data, config) else {
                     panic!("k_min > k_max was not rejected with InvalidRangeError");
+                };
+            }
+
+            #[hegel::test(test_cases = 500)]
+            fn k_min_above_distinct_values_is_rejected(tc: TestCase) {
+                let data = tc.draw(gs::vecs(element()).max_size(MAX_LEN));
+                let distinct = distinct_count(&data) as u8;
+                let k_min = tc.draw(gs::integers::<u8>().min_value(distinct + 1));
+                let k_max = tc.draw(gs::integers::<u8>().min_value(k_min));
+                let config = CkmeansConfig { k_min, k_max };
+                let Err(CkmeansErr::TooManyClassesError) = ckmeans_optimal(&data, config) else {
+                    panic!("k_min = {k_min} > {distinct} distinct values was not rejected");
                 };
             }
         }
