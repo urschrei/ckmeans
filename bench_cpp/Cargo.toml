@@ -12,8 +12,13 @@ ckmeans = { path = ".." }
 cc = "1.2"
 
 [dev-dependencies]
+criterion = "0.8.0"
 rand = "0.10.0"
 rand_distr = "0.6.0"
+
+[[bench]]
+name = "compare"
+harness = false
 
 # The same settings as the ckmeans_py release build
 [profile.release]
