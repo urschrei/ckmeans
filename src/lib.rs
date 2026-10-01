@@ -352,39 +352,14 @@ pub fn ckmeans_indices<T: CkNum>(
     }
     let nclusters = unique_count.min(nclusters as usize);
 
-    // named 'S' originally. The dynamic program runs in f64 regardless of the
-    // input element type; only the backtrack indices feed the result.
-    let mut matrix = algo::FlatMatrix::<f64>::new(nclusters, nvalues);
-    // named 'J' originally - store as usize to avoid conversions
-    let mut backtrack_matrix = algo::FlatMatrix::<usize>::new(nclusters, nvalues);
-
-    // This is a dynamic programming approach to solving the problem of minimizing
-    // within-cluster sum of squares. It's similar to linear regression
-    // in this way, and this calculation incrementally computes the
-    // sum of squares that are later read.
-    algo::fill_matrices(&sorted, &mut matrix, &mut backtrack_matrix, nclusters)
-        .ok_or(CkmeansErr::ConversionError)?;
+    let backtrack_matrix =
+        algo::backtrack_matrix(&sorted, nclusters).ok_or(CkmeansErr::ConversionError)?;
 
     // The real work of Ckmeans clustering happens in the matrix generation:
     // the generated matrices encode all possible clustering combinations, and
     // once they're generated we can solve for the best clustering groups
     // very quickly.
-    let mut indices: Vec<(usize, usize)> = Vec::with_capacity(nclusters);
-    let mut cluster_right = backtrack_matrix.cols - 1;
-
-    // Backtrack the clusters from the dynamic programming matrix. This
-    // starts at the bottom-right corner of the matrix (if the top-left is 0, 0),
-    // and moves the cluster target with the loop.
-    for cluster in (0..backtrack_matrix.rows).rev() {
-        let cluster_left = backtrack_matrix.get(cluster, cluster_right);
-
-        // Store the indices instead of copying data
-        indices.push((cluster_left, cluster_right));
-        if cluster > 0 {
-            cluster_right = cluster_left - 1;
-        }
-    }
-    indices.reverse();
+    let indices = algo::backtrack(&backtrack_matrix, nclusters);
     Ok((sorted, indices))
 }
 
