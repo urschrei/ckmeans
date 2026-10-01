@@ -205,6 +205,52 @@ pub(crate) fn fill_matrices<T: CkNum>(
     Some(())
 }
 
+/// Fill the dynamic programming matrices for up to `nclusters` clusters of `sorted`, and return
+/// the backtrack matrix. Each row depends only on the rows above it, so the first k rows give
+/// the clustering for k clusters, for each k in `1..=nclusters`.
+pub(crate) fn backtrack_matrix<T: CkNum>(
+    sorted: &[T],
+    nclusters: usize,
+) -> Option<FlatMatrix<usize>> {
+    // named 'S' originally. The dynamic program runs in f64 regardless of the
+    // input element type; only the backtrack indices feed the result.
+    let mut matrix = FlatMatrix::<f64>::new(nclusters, sorted.len());
+    // named 'J' originally - store as usize to avoid conversions
+    let mut backtrack_matrix = FlatMatrix::<usize>::new(nclusters, sorted.len());
+    // This is a dynamic programming approach to solving the problem of minimizing
+    // within-cluster sum of squares. It's similar to linear regression
+    // in this way, and this calculation incrementally computes the
+    // sum of squares that are later read.
+    fill_matrices(sorted, &mut matrix, &mut backtrack_matrix, nclusters)?;
+    Some(backtrack_matrix)
+}
+
+/// Return the first and last index of each cluster for `nclusters` clusters. The backtrack
+/// matrix must have at least `nclusters` rows.
+pub(crate) fn backtrack(
+    backtrack_matrix: &FlatMatrix<usize>,
+    nclusters: usize,
+) -> Vec<(usize, usize)> {
+    debug_assert!(nclusters <= backtrack_matrix.rows);
+    let mut indices: Vec<(usize, usize)> = Vec::with_capacity(nclusters);
+    let mut cluster_right = backtrack_matrix.cols - 1;
+
+    // Backtrack the clusters from the dynamic programming matrix. This
+    // starts at the last column of row nclusters - 1 (if the top-left is 0, 0),
+    // and moves the cluster target with the loop.
+    for cluster in (0..nclusters).rev() {
+        let cluster_left = backtrack_matrix.get(cluster, cluster_right);
+
+        // Store the indices instead of copying data
+        indices.push((cluster_left, cluster_right));
+        if cluster > 0 {
+            cluster_right = cluster_left - 1;
+        }
+    }
+    indices.reverse();
+    indices
+}
+
 /// Return the roundest number `b` with `low < b <= high`.
 ///
 /// The function uses the largest power of ten that has a multiple in the
