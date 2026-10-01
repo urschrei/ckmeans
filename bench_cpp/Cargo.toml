@@ -1,0 +1,21 @@
+[package]
+name = "bench_cpp"
+description = "Benchmarks that compare ckmeans with the Ckmeans.1d.dp C++ implementation"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+ckmeans = { path = ".." }
+
+[build-dependencies]
+cc = "1.2"
+
+[dev-dependencies]
+rand = "0.10.0"
+rand_distr = "0.6.0"
+
+# The same settings as the ckmeans_py release build
+[profile.release]
+lto = true
+codegen-units = 1
