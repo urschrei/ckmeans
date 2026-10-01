@@ -133,7 +133,9 @@ pub struct CkmeansResult<T> {
 /// Criterion (BIC) and return the clustering result with per-cluster statistics.
 ///
 /// This follows the approach of Song & Zhong (2020), evaluating each candidate k
-/// in the range `k_min..=k_max` and selecting the k that minimises BIC. A
+/// in the range `k_min..=k_max` and selecting the k that minimises BIC. The BIC is
+/// that of a Gaussian mixture with one component for each cluster, as in the
+/// Ckmeans.1d.dp R package. That package reports the negative of this value. A
 /// clustering cannot have more clusters than there are distinct values, so
 /// `k_max` is capped at the number of distinct values in `data`.
 ///
@@ -201,28 +203,14 @@ pub fn ckmeans_optimal<T: CkNum + Float>(
         });
     }
 
-    // Compute total variance for singleton cluster fallback in BIC
-    let n = data.len();
-    let n_t = T::from_usize(n).ok_or(CkmeansErr::ConversionError)?;
-    let sum: T = data.iter().copied().fold(T::zero(), |acc, x| acc + x);
-    let mean = sum / n_t;
-    let total_variance = data
-        .iter()
-        .copied()
-        .fold(T::zero(), |acc, x| acc + (x - mean) * (x - mean))
-        / n_t;
-
     let mut best_k: u8 = k_min;
     let mut best_bic = T::infinity();
-    let mut best_clusters: Vec<Vec<T>> = Vec::new();
-    let mut best_stats: Vec<ClusterStats<T>> = Vec::new();
+    let mut best_ranges: Vec<(usize, usize)> = Vec::new();
     let mut all_bics: Vec<(u8, T)> = Vec::with_capacity((k_max - k_min + 1) as usize);
 
     for k in k_min..=k_max {
-        let clusters = ckmeans(data, k)?;
-        let stats = algo::compute_cluster_stats(&clusters).ok_or(CkmeansErr::ConversionError)?;
-        let bic =
-            algo::compute_bic(&stats, n, total_variance).ok_or(CkmeansErr::ConversionError)?;
+        let (_, ranges) = ckmeans_indices(data, k)?;
+        let bic = algo::compute_bic(&sorted, &ranges).ok_or(CkmeansErr::ConversionError)?;
 
         all_bics.push((k, bic));
 
@@ -231,10 +219,16 @@ pub fn ckmeans_optimal<T: CkNum + Float>(
         if k == k_min || bic < best_bic || (best_bic.is_nan() && !bic.is_nan()) {
             best_bic = bic;
             best_k = k;
-            best_clusters = clusters;
-            best_stats = stats;
+            best_ranges = ranges;
         }
     }
+
+    let best_clusters: Vec<Vec<T>> = best_ranges
+        .iter()
+        .map(|&(start, end)| sorted[start..=end].to_vec())
+        .collect();
+    let best_stats =
+        algo::compute_cluster_stats(&best_clusters).ok_or(CkmeansErr::ConversionError)?;
 
     Ok(CkmeansResult {
         clusters: best_clusters,
@@ -755,51 +749,29 @@ mod tests {
     #[test]
     fn test_compute_bic() {
         // 3 clusters from 9 data points
-        let stats = vec![
-            ClusterStats {
-                center: 2.0,
-                size: 3,
-                withinss: 2.0,
-            },
-            ClusterStats {
-                center: 15.0,
-                size: 2,
-                withinss: 50.0,
-            },
-            ClusterStats {
-                center: 80.0,
-                size: 4,
-                withinss: 8.0,
-            },
-        ];
-        let n: usize = 9;
-        let total_variance: f64 = 100.0;
-        let bic = algo::compute_bic(&stats, n, total_variance);
-        assert!(bic.is_some());
-        // BIC should be a finite number
+        let sorted = [1.0, 2.0, 3.0, 10.0, 20.0, 78.0, 79.0, 81.0, 82.0];
+        let bic = algo::compute_bic(&sorted, &[(0, 2), (3, 4), (5, 8)]);
         assert!(bic.unwrap().is_finite());
     }
 
     #[test]
-    fn test_compute_bic_singleton_cluster() {
-        // Singleton cluster should not produce NaN or infinity
-        let stats = vec![
-            ClusterStats {
-                center: 1.0,
-                size: 1,
-                withinss: 0.0,
-            },
-            ClusterStats {
-                center: 10.0,
-                size: 5,
-                withinss: 20.0,
-            },
-        ];
-        let n: usize = 6;
-        let total_variance: f64 = 50.0;
-        let bic = algo::compute_bic(&stats, n, total_variance);
-        assert!(bic.is_some());
+    fn test_compute_bic_singleton_and_equal_values() {
+        // A singleton cluster and a cluster of equal values use the distance to the
+        // adjacent values as their variance.
+        let sorted = [1.0, 10.0, 10.0, 10.0, 12.0, 15.0];
+        let bic = algo::compute_bic(&sorted, &[(0, 0), (1, 3), (4, 5)]);
         assert!(bic.unwrap().is_finite());
+    }
+
+    #[test]
+    fn test_compute_bic_prefers_true_cluster_count() {
+        // Two separated groups: k = 2 has a lower BIC than k = 1 and k = 3.
+        let sorted = [1.0, 1.5, 2.0, 2.5, 3.0, 50.0, 50.5, 51.0, 51.5, 52.0];
+        let bic = |ranges: &[(usize, usize)]| algo::compute_bic(&sorted, ranges).unwrap();
+        let k1 = bic(&[(0, 9)]);
+        let k2 = bic(&[(0, 4), (5, 9)]);
+        let k3 = bic(&[(0, 4), (5, 6), (7, 9)]);
+        assert!(k2 < k1 && k2 < k3, "k1 = {k1}, k2 = {k2}, k3 = {k3}");
     }
 
     #[test]

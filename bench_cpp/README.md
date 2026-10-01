@@ -65,10 +65,8 @@ The `ckmeans_py` groups use the inputs of the benchmark in the `ckmeans_py` repo
   by default. In this configuration, `kmeans_1d_dp()` computes one BIC value after the dynamic
   program. This step takes 6 to 10 percent of the C++ time for the `ckmeans_py` cases.
   `rust_indices` and `rust_clusters` do not do this step.
-- `rust_optimal` also computes one BIC value, but with a different formula. The C++ code
-  evaluates the Gaussian mixture density at each value, which is O(nk). `ckmeans_optimal`
-  computes the BIC from the size and within-cluster sum of squares of each cluster, which is
-  O(k) after one pass over the clusters. `ckmeans_optimal` also sorts the data twice.
+- `rust_optimal` computes the same BIC value as the C++ code, with the same O(nk) Gaussian
+  mixture likelihood. `ckmeans_optimal` also sorts the data twice.
 - The C++ call returns a cluster label for each value, and the centre, within-cluster sum of
   squares and size of each cluster. `ckmeans_indices` returns the sorted data and the index
   range of each cluster. `ckmeans` also copies each cluster into a new `Vec`.
@@ -81,10 +79,10 @@ Apple M2 Pro, rustc 1.98.0, Apple clang 17.0.0. The times are Criterion point es
 
 | n | k | `rust_indices` | `rust_optimal` | `cpp_linear` | `cpp_loglinear` |
 |---|---|----------------|----------------|--------------|-----------------|
-| 110,000 | 5 | 15.8 ms | 17.7 ms | 24.7 ms | 23.9 ms |
-| 110,000 | 20 | 59.4 ms | 61.1 ms | 101.1 ms | 91.9 ms |
-| 1,000,000 | 5 | 165.1 ms | 186.5 ms | 253.1 ms | 249.3 ms |
-| 1,000,000 | 20 | 656.3 ms | 670.2 ms | 990.7 ms | 928.2 ms |
+| 110,000 | 5 | 15.8 ms | 20.2 ms | 24.7 ms | 23.9 ms |
+| 110,000 | 20 | 59.4 ms | 68.8 ms | 101.1 ms | 91.9 ms |
+| 1,000,000 | 5 | 165.1 ms | 207.0 ms | 253.1 ms | 249.3 ms |
+| 1,000,000 | 20 | 656.3 ms | 730.4 ms | 990.7 ms | 928.2 ms |
 
 ## Licence
 
