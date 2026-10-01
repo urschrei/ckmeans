@@ -50,8 +50,13 @@ The groups are:
 | `ckmeans_py_uniform_n1000000` | Uniform(1, 3) | 1,000,000 | 5, 20 |
 | `varying_k_n110k` | Uniform(0, 1000) | 110,000 | 3, 7, 15, 30, 50 |
 | `bimodal_n110k` | Normal(0, 1) and Normal(100, 1) | 110,000 | 7 |
+| `bic_k1_9_n110000` | Four normals, means 0, 10, 20, 30 | 110,000 | BIC selection in 1..=9 |
+| `bic_k1_9_n1000000` | Four normals, means 0, 10, 20, 30 | 1,000,000 | BIC selection in 1..=9 |
 
 The `ckmeans_py` groups use the inputs of the benchmark in the `ckmeans_py` repository.
+
+The `bic_k1_9` groups run only `rust_optimal` with `CkmeansConfig::default()`, and the C++ code
+with `Kmin = 1` and `Kmax = 9`.
 
 ## Build settings
 
@@ -66,7 +71,7 @@ The `ckmeans_py` groups use the inputs of the benchmark in the `ckmeans_py` repo
   program. This step takes 6 to 10 percent of the C++ time for the `ckmeans_py` cases.
   `rust_indices` and `rust_clusters` do not do this step.
 - `rust_optimal` computes the same BIC value as the C++ code, with the same O(nk) Gaussian
-  mixture likelihood. `ckmeans_optimal` also sorts the data twice.
+  mixture likelihood.
 - The C++ call returns a cluster label for each value, and the centre, within-cluster sum of
   squares and size of each cluster. `ckmeans_indices` returns the sorted data and the index
   range of each cluster. `ckmeans` also copies each cluster into a new `Vec`.
@@ -79,10 +84,17 @@ Apple M2 Pro, rustc 1.98.0, Apple clang 17.0.0. The times are Criterion point es
 
 | n | k | `rust_indices` | `rust_optimal` | `cpp_linear` | `cpp_loglinear` |
 |---|---|----------------|----------------|--------------|-----------------|
-| 110,000 | 5 | 15.8 ms | 20.2 ms | 24.7 ms | 23.9 ms |
-| 110,000 | 20 | 59.4 ms | 68.8 ms | 101.1 ms | 91.9 ms |
-| 1,000,000 | 5 | 165.1 ms | 207.0 ms | 253.1 ms | 249.3 ms |
-| 1,000,000 | 20 | 656.3 ms | 730.4 ms | 990.7 ms | 928.2 ms |
+| 110,000 | 5 | 15.8 ms | 18.3 ms | 24.7 ms | 23.9 ms |
+| 110,000 | 20 | 59.4 ms | 67.5 ms | 101.1 ms | 91.9 ms |
+| 1,000,000 | 5 | 165.1 ms | 191.3 ms | 253.1 ms | 249.3 ms |
+| 1,000,000 | 20 | 656.3 ms | 717.7 ms | 990.7 ms | 928.2 ms |
+
+BIC selection of k in 1..=9:
+
+| n | `rust_optimal` | `cpp_linear` | `cpp_loglinear` |
+|---|----------------|--------------|-----------------|
+| 110,000 | 46.9 ms | 52.1 ms | 49.4 ms |
+| 1,000,000 | 463.8 ms | 506.4 ms | 497.2 ms |
 
 ## Licence
 
