@@ -110,6 +110,12 @@ Scaling with cluster count (110k f64 values):
 | 30 | 89 ms |
 | 50 | 138 ms |
 
+## Comparison with the C++ implementation
+
+The `bench_cpp` crate compares this library with the C++ implementation of the
+[Ckmeans.1d.dp](https://cran.r-project.org/package=Ckmeans.1d.dp) R package on the same inputs.
+See [`bench_cpp/README.md`](bench_cpp/README.md).
+
 ## Profile-Guided Optimisation (PGO)
 This library supports PGO builds for enhanced performance. PGO typically provides 10-30% performance improvements by optimising hot paths based on real-world usage patterns.
 
