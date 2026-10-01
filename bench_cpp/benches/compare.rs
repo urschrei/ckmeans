@@ -3,7 +3,7 @@
 use std::hint::black_box;
 
 use bench_cpp::{Method, ckmeans_cpp_cluster};
-use ckmeans::{ckmeans, ckmeans_indices};
+use ckmeans::{CkmeansConfig, ckmeans, ckmeans_indices, ckmeans_optimal};
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, Throughput, measurement::WallTime};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -33,6 +33,11 @@ fn bench_implementations(
             b.iter(|| ckmeans(black_box(d), black_box(k)).unwrap());
         },
     );
+    // BIC selection over k..=k, as in the C++ calls
+    let config = CkmeansConfig { k_min: k, k_max: k };
+    group.bench_with_input(BenchmarkId::new("rust_optimal", parameter), data, |b, d| {
+        b.iter(|| ckmeans_optimal(black_box(d), black_box(config)).unwrap());
+    });
     for method in [Method::Linear, Method::LogLinear] {
         let id = BenchmarkId::new(format!("cpp_{}", method.name()), parameter);
         group.bench_with_input(id, data, |b, d| {
