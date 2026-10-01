@@ -32,6 +32,7 @@ Each benchmark runs these functions on the same seeded input:
 |----|------|
 | `rust_indices` | `ckmeans::ckmeans_indices`, which `ckmeans_py` calls |
 | `rust_clusters` | `ckmeans::ckmeans` |
+| `rust_optimal` | `ckmeans::ckmeans_optimal` with `k_min = k_max = k` |
 | `cpp_linear` | `kmeans_1d_dp()` with method `linear`, the default in the R and Python packages |
 | `cpp_loglinear` | `kmeans_1d_dp()` with method `loglinear` |
 
@@ -57,7 +58,11 @@ The `ckmeans_py` groups use the inputs of the benchmark in the `ckmeans_py` repo
 - The C++ call uses `estimate_k = "BIC"` with `Kmin = Kmax = k`, as the Python package does
   by default. In this configuration, `kmeans_1d_dp()` computes one BIC value after the dynamic
   program. This step takes 6 to 10 percent of the C++ time for the `ckmeans_py` cases.
-  The Rust code does not do this step.
+  `rust_indices` and `rust_clusters` do not do this step.
+- `rust_optimal` also computes one BIC value, but with a different formula. The C++ code
+  evaluates the Gaussian mixture density at each value, which is O(nk). `ckmeans_optimal`
+  computes the BIC from the size and within-cluster sum of squares of each cluster, which is
+  O(k) after one pass over the clusters. `ckmeans_optimal` also sorts the data twice.
 - The C++ call returns a cluster label for each value, and the centre, within-cluster sum of
   squares and size of each cluster. `ckmeans_indices` returns the sorted data and the index
   range of each cluster. `ckmeans` also copies each cluster into a new `Vec`.
@@ -68,12 +73,12 @@ The `ckmeans_py` groups use the inputs of the benchmark in the `ckmeans_py` repo
 
 Apple M2 Pro, rustc 1.98.0, Apple clang 17.0.0. The times are Criterion point estimates.
 
-| n | k | `rust_indices` | `cpp_linear` | `cpp_loglinear` |
-|---|---|----------------|--------------|-----------------|
-| 110,000 | 5 | 15.8 ms | 24.7 ms | 23.9 ms |
-| 110,000 | 20 | 59.4 ms | 101.1 ms | 91.9 ms |
-| 1,000,000 | 5 | 165.1 ms | 253.1 ms | 249.3 ms |
-| 1,000,000 | 20 | 656.3 ms | 990.7 ms | 928.2 ms |
+| n | k | `rust_indices` | `rust_optimal` | `cpp_linear` | `cpp_loglinear` |
+|---|---|----------------|----------------|--------------|-----------------|
+| 110,000 | 5 | 15.8 ms | 17.7 ms | 24.7 ms | 23.9 ms |
+| 110,000 | 20 | 59.4 ms | 61.1 ms | 101.1 ms | 91.9 ms |
+| 1,000,000 | 5 | 165.1 ms | 186.5 ms | 253.1 ms | 249.3 ms |
+| 1,000,000 | 20 | 656.3 ms | 670.2 ms | 990.7 ms | 928.2 ms |
 
 ## Licence
 
