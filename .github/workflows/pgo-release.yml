@@ -176,13 +176,17 @@ jobs:
     - name: Download release assets
       uses: actions/download-artifact@v8
       with:
-        pattern: "libckmeans-*|ckmeans-*"
+        # A glob, not a regular expression: it matches libckmeans-* and ckmeans-*
+        # but not the pgo-* build artifacts.
+        pattern: "*ckmeans-*"
         path: artifacts
+        merge-multiple: true
 
     - name: Create Release
       uses: softprops/action-gh-release@v3
       with:
-        files: artifacts/**/*
+        files: artifacts/*
+        fail_on_unmatched_files: true
         draft: false
         prerelease: false
         body: |
