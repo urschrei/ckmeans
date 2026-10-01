@@ -26,7 +26,10 @@ assert_eq!(result, expected);
 ## Optimal k Selection
 
 If you don't know the optimal number of clusters in advance, `ckmeans_optimal` can determine it
-automatically using the Bayesian Information Criterion (BIC), following Song & Zhong (2020):
+automatically using the Bayesian Information Criterion (BIC), following Song & Zhong (2020).
+The BIC is that of a Gaussian mixture with one component for each cluster. `ckmeans_optimal`
+selects the same k as the `Ckmeans.1d.dp` R package, which reports the negative of the BIC
+values that `ckmeans_optimal` returns:
 
 ```rust
 use ckmeans::{ckmeans_optimal, CkmeansConfig};

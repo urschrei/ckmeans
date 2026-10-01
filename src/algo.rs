@@ -285,52 +285,86 @@ pub(crate) fn compute_cluster_stats<T: CkNum>(clusters: &[Vec<T>]) -> Option<Vec
         .collect()
 }
 
-/// Compute the BIC for a clustering result under a Gaussian mixture model.
+/// Return the mean and the sample variance of `x`. Use offsets from the middle value, as
+/// `shifted_data_variance()` in the Ckmeans.1d.dp C++ code does.
+fn shifted_mean_variance(x: &[f64]) -> (f64, f64) {
+    let n = x.len() as f64;
+    let middle = x[(x.len() - 1) / 2];
+    let (sum, sum_sq) = x.iter().fold((0.0, 0.0), |(sum, sum_sq), &v| {
+        let d = v - middle;
+        (sum + d, sum_sq + d * d)
+    });
+    let mean = sum / n + middle;
+    // Rounding can make the difference negative
+    let variance = if x.len() > 1 {
+        ((sum_sq - sum * sum / n) / (n - 1.0)).max(0.0)
+    } else {
+        0.0
+    };
+    (mean, variance)
+}
+
+/// Compute the BIC of a clustering of `sorted` under a Gaussian mixture model. Each element of
+/// `ranges` gives the first and last index of a cluster. A lower value is better.
 ///
-/// Following Song & Zhong (2020):
-/// - Log-likelihood per cluster j: -n_j/2 * ln(2*pi) - n_j/2 * ln(sigma_j^2) - (n_j - 1)/2
-/// - For singleton clusters (n_j = 1), sigma_j^2 = total_variance / n
-/// - Number of parameters: p = 3k - 1
-/// - BIC = -2 * log(L) + p * ln(n)
-pub(crate) fn compute_bic<T: CkNum + Float>(
-    stats: &[ClusterStats<T>],
-    n: usize,
-    total_variance: T,
-) -> Option<T> {
-    let k = stats.len();
-    let n_t = T::from_usize(n)?;
-    let two = T::from_f64(2.0)?;
-    let two_pi = T::from_f64(std::f64::consts::TAU)?;
-    let ln_two_pi = two_pi.ln();
+/// This is the calculation in `select_levels()` of the Ckmeans.1d.dp C++ code (Song & Zhong,
+/// 2020), which reports the negative of this value:
+/// - Cluster j gives a component with weight n_j / n, the mean of the cluster, and the sample
+///   variance of the cluster.
+/// - Let d be the smallest distance from the cluster to an adjacent value outside it. A
+///   component with zero variance gets the variance d^2 / 36. A component of one value gets d^2.
+///   No variance is less than `f64::MIN_POSITIVE`.
+/// - The log-likelihood ln L is the sum over all values of the log of the mixture density.
+/// - BIC = -2 ln L + (3k - 1) ln n.
+///
+/// The calculation is in `f64`. It is O(nk).
+pub(crate) fn compute_bic<T: CkNum + Float>(sorted: &[T], ranges: &[(usize, usize)]) -> Option<T> {
+    let x: Vec<f64> = sorted.iter().map(|v| v.to_f64()).collect::<Option<_>>()?;
+    let n = x.len() as f64;
 
-    // Fallback variance for singleton clusters
-    let singleton_var = total_variance / n_t;
+    // (weight / sqrt(2 pi variance), mean, 2 * variance) for each component
+    let components: Vec<(f64, f64, f64)> = ranges
+        .iter()
+        .map(|&(left, right)| {
+            let size = right - left + 1;
+            let (mean, mut variance) = shifted_mean_variance(&x[left..=right]);
+            if variance == 0.0 || size == 1 {
+                let gap_left = left.checked_sub(1).map(|i| x[left] - x[i]);
+                let gap_right = x.get(right + 1).map(|&next| next - x[right]);
+                let gap = match (gap_left, gap_right) {
+                    (Some(l), Some(r)) => Some(l.min(r)),
+                    (l, r) => l.or(r),
+                };
+                // There is no adjacent value only if all values are in one cluster
+                if let Some(d) = gap {
+                    if variance == 0.0 {
+                        variance = d * d / 36.0;
+                    }
+                    if size == 1 {
+                        variance = d * d;
+                    }
+                }
+            }
+            // The variance underflows to zero if the values are very close. The C++ code
+            // does not set a minimum, and its BIC is NaN for these clusters.
+            variance = variance.max(f64::MIN_POSITIVE);
+            let coeff = (size as f64 / n) / (std::f64::consts::TAU * variance).sqrt();
+            (coeff, mean, 2.0 * variance)
+        })
+        .collect();
 
-    let mut log_likelihood = T::zero();
+    let log_likelihood: f64 = x
+        .iter()
+        .map(|&v| {
+            components
+                .iter()
+                .map(|&(coeff, mean, two_var)| coeff * (-(v - mean) * (v - mean) / two_var).exp())
+                .sum::<f64>()
+                .ln()
+        })
+        .sum();
 
-    for stat in stats {
-        let n_j = T::from_usize(stat.size)?;
-        let sigma_sq = if stat.size <= 1 {
-            singleton_var
-        } else {
-            stat.withinss / n_j
-        };
-
-        // Guard against zero variance (all identical values in cluster)
-        if sigma_sq <= T::zero() {
-            // Perfectly homogeneous cluster -- skip the variance penalty.
-            // Only the constant terms contribute.
-            log_likelihood = log_likelihood - n_j / two * ln_two_pi;
-        } else {
-            log_likelihood = log_likelihood
-                - n_j / two * ln_two_pi
-                - n_j / two * sigma_sq.ln()
-                - (n_j - T::one()) / two;
-        }
-    }
-
-    // p = 3k - 1: k means + k variances + (k-1) mixing proportions
-    let p = T::from_usize(3 * k - 1)?;
-    let bic = -two * log_likelihood + p * n_t.ln();
-    Some(bic)
+    // p = 3k - 1: k means, k variances and k - 1 weights
+    let p = (3 * ranges.len() - 1) as f64;
+    T::from_f64(-2.0 * log_likelihood + p * n.ln())
 }
