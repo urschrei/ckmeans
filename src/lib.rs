@@ -208,8 +208,12 @@ pub fn ckmeans_optimal<T: CkNum + Float>(
     let mut best_ranges: Vec<(usize, usize)> = Vec::new();
     let mut all_bics: Vec<(u8, T)> = Vec::with_capacity((k_max - k_min + 1) as usize);
 
+    // Fill the matrices once. The first k rows give the clustering for k clusters.
+    let backtrack_matrix =
+        algo::backtrack_matrix(&sorted, k_max as usize).ok_or(CkmeansErr::ConversionError)?;
+
     for k in k_min..=k_max {
-        let (_, ranges) = ckmeans_indices(data, k)?;
+        let ranges = algo::backtrack(&backtrack_matrix, k as usize);
         let bic = algo::compute_bic(&sorted, &ranges).ok_or(CkmeansErr::ConversionError)?;
 
         all_bics.push((k, bic));

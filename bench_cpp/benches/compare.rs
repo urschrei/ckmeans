@@ -2,7 +2,7 @@
 
 use std::hint::black_box;
 
-use bench_cpp::{Method, ckmeans_cpp_cluster};
+use bench_cpp::{Method, ckmeans_cpp_cluster, ckmeans_cpp_optimal};
 use ckmeans::{CkmeansConfig, ckmeans, ckmeans_indices, ckmeans_optimal};
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, Throughput, measurement::WallTime};
 use rand::rngs::StdRng;
@@ -85,10 +85,41 @@ fn bench_bimodal(c: &mut Criterion) {
     group.finish();
 }
 
+/// BIC selection of k in 1..=9, the default range in the R, Python and Rust packages.
+/// The input is a mixture of four separated normal distributions.
+fn bench_bic_selection(c: &mut Criterion) {
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let components: Vec<Normal<f64>> = (0..4)
+        .map(|i| Normal::new(f64::from(i) * 10.0, 1.0).unwrap())
+        .collect();
+    let config = CkmeansConfig::default();
+    for n in [110_000, 1_000_000] {
+        let mut group = c.benchmark_group(format!("bic_k1_9_n{n}"));
+        if n >= 1_000_000 {
+            group.sample_size(10);
+        }
+        group.throughput(Throughput::Elements(n as u64));
+        let data: Vec<f64> = (0..n)
+            .map(|i| rng.sample(components[i % components.len()]))
+            .collect();
+        group.bench_with_input("rust_optimal", &data, |b, d| {
+            b.iter(|| ckmeans_optimal(black_box(d), black_box(config)).unwrap());
+        });
+        for method in [Method::Linear, Method::LogLinear] {
+            let id = format!("cpp_{}", method.name());
+            group.bench_with_input(id, &data, |b, d| {
+                b.iter(|| ckmeans_cpp_optimal(black_box(d), 1, 9, method).unwrap());
+            });
+        }
+        group.finish();
+    }
+}
+
 criterion::criterion_group!(
     benches,
     bench_ckmeans_py_cases,
     bench_varying_k,
-    bench_bimodal
+    bench_bimodal,
+    bench_bic_selection
 );
 criterion::criterion_main!(benches);
