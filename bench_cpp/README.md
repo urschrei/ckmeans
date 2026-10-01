@@ -24,6 +24,12 @@ To check that the two implementations give the same clusters:
 cargo nextest r
 ```
 
+To compare the number of clusters that the two implementations select with the BIC:
+
+```bash
+cargo run --release --example bic_selection
+```
+
 ## What is measured
 
 Each benchmark runs these functions on the same seeded input:
