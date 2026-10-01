@@ -33,7 +33,7 @@ jobs:
           - build: macos
             os: macos-latest
             artifact_name: libckmeans.dylib
-            asset_name: libckmeans-darwin-amd64.dylib
+            asset_name: libckmeans-darwin-arm64.dylib
           - build: windows
             os: windows-latest
             artifact_name: ckmeans.dll
@@ -197,7 +197,7 @@ jobs:
           ### Assets
           - `libckmeans-linux-amd64.so` - Linux x86_64 shared library (manylinux_2_28)
           - `libckmeans-linux-arm64.so` - Linux ARM64 shared library (manylinux_2_28)
-          - `libckmeans-darwin-amd64.dylib` - macOS dynamic library  
+          - `libckmeans-darwin-arm64.dylib` - macOS ARM64 dynamic library  
           - `ckmeans-windows-amd64.dll` - Windows DLL
           
           ### Performance
