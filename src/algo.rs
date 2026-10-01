@@ -363,12 +363,16 @@ fn shifted_mean_variance(x: &[f64]) -> (f64, f64) {
 /// - The log-likelihood ln L is the sum over all values of the log of the mixture density.
 /// - BIC = -2 ln L + (3k - 1) ln n.
 ///
-/// The calculation is in `f64`. It is O(nk).
+/// The calculation is in `f64`, and it uses the log of each density. It is O(nk), but it does not
+/// call `exp()` for a density that is less than 2^-60 of the largest density at that value, and it
+/// calls `ln()` once for each 64 values.
+/// Where the density of a value underflows, the C++ code gives an infinite BIC, and this
+/// function gives a finite value.
 pub(crate) fn compute_bic<T: CkNum + Float>(sorted: &[T], ranges: &[(usize, usize)]) -> Option<T> {
     let x: Vec<f64> = sorted.iter().map(|v| v.to_f64()).collect::<Option<_>>()?;
     let n = x.len() as f64;
 
-    // (weight / sqrt(2 pi variance), mean, 2 * variance) for each component
+    // (ln(weight / sqrt(2 pi variance)), mean, 1 / (2 * variance)) for each component
     let components: Vec<(f64, f64, f64)> = ranges
         .iter()
         .map(|&(left, right)| {
@@ -394,21 +398,44 @@ pub(crate) fn compute_bic<T: CkNum + Float>(sorted: &[T], ranges: &[(usize, usiz
             // The variance underflows to zero if the values are very close. The C++ code
             // does not set a minimum, and its BIC is NaN for these clusters.
             variance = variance.max(f64::MIN_POSITIVE);
-            let coeff = (size as f64 / n) / (std::f64::consts::TAU * variance).sqrt();
-            (coeff, mean, 2.0 * variance)
+            let log_coeff = (size as f64 / n).ln() - 0.5 * (std::f64::consts::TAU * variance).ln();
+            (log_coeff, mean, 0.5 / variance)
         })
         .collect();
 
-    let log_likelihood: f64 = x
-        .iter()
-        .map(|&v| {
-            components
+    // Sum the densities relative to the largest, and skip the exp() of each density that is less
+    // than 2^-60 of the largest. The skipped densities change the sum by at most k * 2^-60 of
+    // its value.
+    let skip = 60.0 * std::f64::consts::LN_2;
+    let mut log_densities = vec![0.0; components.len()];
+    let mut log_likelihood = 0.0;
+    // Each relative sum is in [1, k], and k is at most 255. The product of 64 relative sums is
+    // at most 255^64 < 1e155, so one ln() for each 64 values is sufficient.
+    for chunk in x.chunks(64) {
+        let mut product = 1.0;
+        for &v in chunk {
+            let mut largest = f64::NEG_INFINITY;
+            for (log_density, &(log_coeff, mean, inv_two_var)) in
+                log_densities.iter_mut().zip(&components)
+            {
+                *log_density = log_coeff - (v - mean) * (v - mean) * inv_two_var;
+                if log_density.is_nan() {
+                    return T::from_f64(f64::NAN);
+                }
+                largest = largest.max(*log_density);
+            }
+            log_likelihood += largest;
+            if largest == f64::NEG_INFINITY {
+                continue;
+            }
+            product *= log_densities
                 .iter()
-                .map(|&(coeff, mean, two_var)| coeff * (-(v - mean) * (v - mean) / two_var).exp())
-                .sum::<f64>()
-                .ln()
-        })
-        .sum();
+                .filter(|&&log_density| log_density > largest - skip)
+                .map(|&log_density| (log_density - largest).exp())
+                .sum::<f64>();
+        }
+        log_likelihood += product.ln();
+    }
 
     // p = 3k - 1: k means, k variances and k - 1 weights
     let p = (3 * ranges.len() - 1) as f64;
