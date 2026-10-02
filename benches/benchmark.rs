@@ -8,7 +8,7 @@ use rand_distr::Normal;
 use rand_distr::Uniform;
 use std::hint::black_box;
 
-use ckmeans::ckmeans;
+use ckmeans::{CkmeansConfig, ckmeans, ckmeans_optimal};
 use criterion::{BenchmarkId, Criterion};
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -112,6 +112,33 @@ fn bench_pathological(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks `ckmeans_optimal` with the default range of k (1 to 9)
+fn bench_optimal(c: &mut Criterion) {
+    let mut group = c.benchmark_group("optimal_k1_9");
+    let mut rng = rand::rng();
+    let config = CkmeansConfig::default();
+
+    // A mixture of four separated normal distributions, as in bench_cpp
+    let components: Vec<Normal<f64>> = (0..4)
+        .map(|i| Normal::new(f64::from(i) * 10.0, 1.0).unwrap())
+        .collect();
+    for n in [110_000, 1_000_000] {
+        let data: Vec<f64> = (0..n)
+            .map(|i| rng.sample(components[i % components.len()]))
+            .collect();
+        group.bench_with_input(BenchmarkId::new("four_normals", n), &data, |b, data| {
+            b.iter(|| ckmeans_optimal(black_box(data), black_box(config)).unwrap());
+        });
+    }
+
+    let uniform = Uniform::new(0.0, 1000.0).unwrap();
+    let data: Vec<f64> = (0..110_000).map(|_| rng.sample(uniform)).collect();
+    group.bench_with_input(BenchmarkId::new("uniform", 110_000), &data, |b, data| {
+        b.iter(|| ckmeans_optimal(black_box(data), black_box(config)).unwrap());
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     criterion_benchmark,
@@ -119,5 +146,6 @@ criterion_group!(
     bench_varying_k,
     bench_high_n_and_k,
     bench_pathological,
+    bench_optimal,
 );
 criterion_main!(benches);
