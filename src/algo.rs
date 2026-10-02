@@ -92,6 +92,9 @@ const LANE_THRESHOLD: usize = 16;
 /// For long ranges, each of [`LANES`] lanes keeps its own minimum, so that the
 /// compiler can vectorise the loop. Each cost uses the same operations as
 /// [`ssq`], so the result is identical to that of a scalar search.
+// On an Apple M2 Pro, as_chunks makes ckmeans 10 to 15 percent slower than
+// chunks_exact.
+#[allow(clippy::chunks_exact_to_as_chunks)]
 #[inline(always)]
 fn min_split(
     i: usize,
