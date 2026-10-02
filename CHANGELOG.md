@@ -12,6 +12,11 @@ before 2.1.0, see the [GitHub releases](https://github.com/urschrei/ckmeans/rele
   supports it, with [`fearless_simd`](https://crates.io/crates/fearless_simd). For 110,000 to
   1,000,000 values, `ckmeans` is 14 to 19 percent faster on an Apple M2 Pro, and 22 to 32 percent
   faster on an AMD EPYC with AVX2. The clusters do not change.
+- `ckmeans_optimal` calculates the BIC values faster. It converts the input to `f64` one time,
+  vectorises the calculation of the log densities, and does not call `exp()` for the largest
+  density at each value. For k = 1 to 9 on an Apple M2 Pro, `ckmeans_optimal` is 27 percent
+  faster than in version 2.1.0 for 110,000 values, and 31 percent faster for 1,000,000 values.
+  The BIC values do not change.
 - The minimum supported Rust version is 1.89.
 
 ## [2.1.0] - 2026-10-01
