@@ -3,6 +3,14 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). For releases
 before 2.1.0, see the [GitHub releases](https://github.com/urschrei/ckmeans/releases).
 
+## [Unreleased]
+
+### Changed
+
+- The search for the optimal split point divides long ranges into four independent lanes, so
+  that the compiler can vectorise it. On an Apple M2 Pro, `ckmeans` is 14 to 19 percent faster
+  for 110,000 to 1,000,000 values. The clusters do not change.
+
 ## [2.1.0] - 2026-10-01
 
 ### Fixed
@@ -26,4 +34,5 @@ before 2.1.0, see the [GitHub releases](https://github.com/urschrei/ckmeans/rele
   Ckmeans.1d.dp R package. It is not part of the published crate. See
   [`bench_cpp/README.md`](bench_cpp/README.md).
 
+[Unreleased]: https://github.com/urschrei/ckmeans/compare/v2.1.0...HEAD
 [2.1.0]: https://github.com/urschrei/ckmeans/compare/v2.0.0...v2.1.0
