@@ -3,7 +3,7 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). For releases
 before 2.1.0, see the [GitHub releases](https://github.com/urschrei/ckmeans/releases).
 
-## [Unreleased]
+## [2.2.0] - 2026-10-02
 
 ### Changed
 
@@ -42,5 +42,5 @@ before 2.1.0, see the [GitHub releases](https://github.com/urschrei/ckmeans/rele
   Ckmeans.1d.dp R package. It is not part of the published crate. See
   [`bench_cpp/README.md`](bench_cpp/README.md).
 
-[Unreleased]: https://github.com/urschrei/ckmeans/compare/v2.1.0...HEAD
+[2.2.0]: https://github.com/urschrei/ckmeans/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/urschrei/ckmeans/compare/v2.0.0...v2.1.0
