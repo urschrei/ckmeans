@@ -8,8 +8,11 @@ before 2.1.0, see the [GitHub releases](https://github.com/urschrei/ckmeans/rele
 ### Changed
 
 - The search for the optimal split point divides long ranges into four independent lanes, so
-  that the compiler can vectorise it. On an Apple M2 Pro, `ckmeans` is 14 to 19 percent faster
-  for 110,000 to 1,000,000 values. The clusters do not change.
+  that the compiler can vectorise it. On x86-64, the library selects AVX2 at run time if the CPU
+  supports it, with [`fearless_simd`](https://crates.io/crates/fearless_simd). For 110,000 to
+  1,000,000 values, `ckmeans` is 14 to 19 percent faster on an Apple M2 Pro, and 22 to 32 percent
+  faster on an AMD EPYC with AVX2. The clusters do not change.
+- The minimum supported Rust version is 1.89.
 
 ## [2.1.0] - 2026-10-01
 

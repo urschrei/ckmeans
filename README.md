@@ -154,7 +154,7 @@ In addition to the unit tests, [`src/properties.rs`](src/properties.rs) contains
 
 ## Possible Improvements
 
-- **SIMD**: The split-point search is vectorised for ranges of 16 or more candidates, with 128-bit vectors on the default targets. On x86-64, 256-bit AVX2 vectors could double the lane width.
+- **SIMD**: The split-point search is vectorised for ranges of 16 or more candidates. On x86-64, the library selects AVX2 at run time if the CPU supports it; other x86-64 CPUs use SSE2. A build for `x86-64-v3` (AVX2 as the baseline) is not measurably faster than this run-time selection.
 - **Parallelisation**: Columns could be processed in parallel using rayon (though dependencies between columns limit this)
 
 # References
