@@ -448,32 +448,26 @@ fn shifted_mean_variance(x: &[f64]) -> (f64, f64) {
     (mean, variance)
 }
 
-/// Compute the BIC of a clustering of `sorted` under a Gaussian mixture model. Each element of
-/// `ranges` gives the first and last index of a cluster. A lower value is better.
-///
-/// This is the calculation in `select_levels()` of the Ckmeans.1d.dp C++ code (Song & Zhong,
-/// 2020), which reports the negative of this value:
-/// - Cluster j gives a component with weight n_j / n, the mean of the cluster, and the sample
-///   variance of the cluster.
-/// - Let d be the smallest distance from the cluster to an adjacent value outside it. A
-///   component with zero variance gets the variance d^2 / 36. A component of one value gets d^2.
-///   No variance is less than `f64::MIN_POSITIVE`.
-/// - The log-likelihood ln L is the sum over all values of the log of the mixture density.
-/// - BIC = -2 ln L + (3k - 1) ln n.
-///
-/// The calculation is in `f64`, and it uses the log of each density. It is O(nk), but it does not
-/// call `exp()` for a density that is less than 2^-60 of the largest density at that value, and it
-/// calls `ln()` once for each 64 values.
-/// Where the density of a value underflows, the C++ code gives an infinite BIC, and this
-/// function gives a finite value.
-pub(crate) fn compute_bic<T: CkNum + Float>(sorted: &[T], ranges: &[(usize, usize)]) -> Option<T> {
-    let x: Vec<f64> = sorted.iter().map(|v| v.to_f64()).collect::<Option<_>>()?;
-    let n = x.len() as f64;
+/// Parameters of the mixture components, one element for each cluster.
+struct Components {
+    /// ln(weight / sqrt(2 pi variance))
+    log_coeff: Vec<f64>,
+    mean: Vec<f64>,
+    /// 1 / (2 variance)
+    inv_two_var: Vec<f64>,
+}
 
-    // (ln(weight / sqrt(2 pi variance)), mean, 1 / (2 * variance)) for each component
-    let components: Vec<(f64, f64, f64)> = ranges
-        .iter()
-        .map(|&(left, right)| {
+impl Components {
+    /// Compute the component of each cluster of `x`, as `select_levels()` in the Ckmeans.1d.dp
+    /// C++ code does. See [`compute_bic`].
+    fn new(x: &[f64], ranges: &[(usize, usize)]) -> Self {
+        let n = x.len() as f64;
+        let mut components = Self {
+            log_coeff: Vec::with_capacity(ranges.len()),
+            mean: Vec::with_capacity(ranges.len()),
+            inv_two_var: Vec::with_capacity(ranges.len()),
+        };
+        for &(left, right) in ranges {
             let size = right - left + 1;
             let (mean, mut variance) = shifted_mean_variance(&x[left..=right]);
             if variance == 0.0 || size == 1 {
@@ -496,48 +490,137 @@ pub(crate) fn compute_bic<T: CkNum + Float>(sorted: &[T], ranges: &[(usize, usiz
             // The variance underflows to zero if the values are very close. The C++ code
             // does not set a minimum, and its BIC is NaN for these clusters.
             variance = variance.max(f64::MIN_POSITIVE);
-            let log_coeff = (size as f64 / n).ln() - 0.5 * (std::f64::consts::TAU * variance).ln();
-            (log_coeff, mean, 0.5 / variance)
-        })
-        .collect();
-
-    // Sum the densities relative to the largest, and skip the exp() of each density that is less
-    // than 2^-60 of the largest. The skipped densities change the sum by at most k * 2^-60 of
-    // its value.
-    let skip = 60.0 * std::f64::consts::LN_2;
-    let mut log_densities = vec![0.0; components.len()];
-    let mut log_likelihood = 0.0;
-    // Each relative sum is in [1, k], and k is at most 255. The product of 64 relative sums is
-    // at most 255^64 < 1e155, so one ln() for each 64 values is sufficient.
-    for chunk in x.chunks(64) {
-        let mut product = 1.0;
-        for &v in chunk {
-            let mut largest = f64::NEG_INFINITY;
-            for (log_density, &(log_coeff, mean, inv_two_var)) in
-                log_densities.iter_mut().zip(&components)
-            {
-                *log_density = log_coeff - (v - mean) * (v - mean) * inv_two_var;
-                if log_density.is_nan() {
-                    return T::from_f64(f64::NAN);
-                }
-                largest = largest.max(*log_density);
-            }
-            log_likelihood += largest;
-            if largest == f64::NEG_INFINITY {
-                continue;
-            }
-            product *= log_densities
-                .iter()
-                .filter(|&&log_density| log_density > largest - skip)
-                .map(|&log_density| (log_density - largest).exp())
-                .sum::<f64>();
+            components
+                .log_coeff
+                .push((size as f64 / n).ln() - 0.5 * (std::f64::consts::TAU * variance).ln());
+            components.mean.push(mean);
+            components.inv_two_var.push(0.5 / variance);
         }
-        log_likelihood += product.ln();
+        components
     }
+}
 
+/// Densities that are less than 2^-60 of the largest density at a value do not contribute to
+/// the sum. They change the sum by at most k * 2^-60 of its value.
+const SKIP: f64 = 60.0 * std::f64::consts::LN_2;
+
+/// Number of values in each step of the vectorised likelihood loop.
+const BIC_LANES: usize = 4;
+
+/// Values for which [`compute_bic`] calls `ln()` one time. Each relative sum is in [1, k], and k
+/// is at most 255. The product of 64 relative sums is at most 255^64 < 1e155.
+const BIC_BLOCK: usize = 64;
+
+/// Store the log density of each component at each value of `v` in `log_densities`, and return
+/// the largest log density at each value. The second element is true if a log density is NaN.
+/// `log_densities` must have one element for each component.
+#[inline(always)]
+fn log_densities<const L: usize>(
+    v: &[f64; L],
+    components: &Components,
+    log_densities: &mut [[f64; L]],
+) -> ([f64; L], bool) {
+    let mut largest = [f64::NEG_INFINITY; L];
+    let mut nan = false;
+    let params = components
+        .log_coeff
+        .iter()
+        .zip(&components.mean)
+        .zip(&components.inv_two_var);
+    for (row, ((&log_coeff, &mean), &inv_two_var)) in log_densities.iter_mut().zip(params) {
+        for lane in 0..L {
+            let ld = log_coeff - (v[lane] - mean) * (v[lane] - mean) * inv_two_var;
+            nan |= ld.is_nan();
+            largest[lane] = largest[lane].max(ld);
+            row[lane] = ld;
+        }
+    }
+    (largest, nan)
+}
+
+/// Return the sum of the densities in lane `lane` of `log_densities`, relative to `largest`, the
+/// largest log density in that lane. The sum is 1 if `largest` is negative infinity, so that a
+/// value with no finite density does not change the product of the sums.
+#[inline(always)]
+fn relative_sum<const L: usize>(log_densities: &[[f64; L]], lane: usize, largest: f64) -> f64 {
+    if largest == f64::NEG_INFINITY {
+        return 1.0;
+    }
+    let mut sum = 0.0;
+    for row in log_densities {
+        let ld = row[lane];
+        if ld > largest - SKIP {
+            // e^0 is exactly 1, so the largest density does not need exp()
+            sum += if ld == largest {
+                1.0
+            } else {
+                (ld - largest).exp()
+            };
+        }
+    }
+    sum
+}
+
+/// Return the log-likelihood of the sorted values `x` under the mixture, or NaN if a log density
+/// is NaN.
+///
+/// The function calculates the log densities of [`BIC_LANES`] values in each step, so that the
+/// compiler can vectorise that loop. The sums and the products use the same order of operations
+/// as a calculation for one value at a time.
+#[inline(always)]
+fn log_likelihood(x: &[f64], components: &Components) -> f64 {
+    let k = components.mean.len();
+    let mut group = vec![[0.0; BIC_LANES]; k];
+    let mut single = vec![[0.0; 1]; k];
+    let mut total = 0.0;
+    let mut nan = false;
+    for block in x.chunks(BIC_BLOCK) {
+        let mut product = 1.0;
+        let (groups, rest) = block.as_chunks::<BIC_LANES>();
+        for v in groups {
+            let (largest, group_nan) = log_densities(v, components, &mut group);
+            nan |= group_nan;
+            for (lane, &largest) in largest.iter().enumerate() {
+                total += largest;
+                product *= relative_sum(&group, lane, largest);
+            }
+        }
+        for &v in rest {
+            let ([largest], value_nan) = log_densities(&[v], components, &mut single);
+            nan |= value_nan;
+            total += largest;
+            product *= relative_sum(&single, 0, largest);
+        }
+        total += product.ln();
+    }
+    if nan { f64::NAN } else { total }
+}
+
+/// Compute the BIC of a clustering of the sorted values `x` under a Gaussian mixture model. Each
+/// element of `ranges` gives the first and last index of a cluster. A lower value is better.
+///
+/// This is the calculation in `select_levels()` of the Ckmeans.1d.dp C++ code (Song & Zhong,
+/// 2020), which reports the negative of this value:
+/// - Cluster j gives a component with weight n_j / n, the mean of the cluster, and the sample
+///   variance of the cluster.
+/// - Let d be the smallest distance from the cluster to an adjacent value outside it. A
+///   component with zero variance gets the variance d^2 / 36. A component of one value gets d^2.
+///   No variance is less than `f64::MIN_POSITIVE`.
+/// - The log-likelihood ln L is the sum over all values of the log of the mixture density.
+/// - BIC = -2 ln L + (3k - 1) ln n.
+///
+/// The calculation uses the log of each density. It is O(nk), but it does not calculate the
+/// density of a component that is less than 2^-60 of the largest density at that value, and it
+/// calls `ln()` once for each 64 values.
+/// Where the density of a value underflows, the C++ code gives an infinite BIC, and this
+/// function gives a finite value.
+pub(crate) fn compute_bic(x: &[f64], ranges: &[(usize, usize)]) -> f64 {
+    let n = x.len() as f64;
+    let components = Components::new(x, ranges);
+    let log_likelihood = dispatch!(Level::new(), _simd => log_likelihood(x, &components));
     // p = 3k - 1: k means, k variances and k - 1 weights
     let p = (3 * ranges.len() - 1) as f64;
-    T::from_f64(-2.0 * log_likelihood + p * n.ln())
+    -2.0 * log_likelihood + p * n.ln()
 }
 
 #[cfg(test)]
@@ -545,6 +628,41 @@ mod tests {
     use super::*;
     use hegel::TestCase;
     use hegel::generators::{self as gs, Generator};
+
+    /// The scalar BIC calculation that `compute_bic` replaced, with `exp()` from the standard
+    /// library.
+    fn reference_bic(x: &[f64], ranges: &[(usize, usize)]) -> f64 {
+        let n = x.len() as f64;
+        let c = Components::new(x, ranges);
+        let mut log_densities = vec![0.0; ranges.len()];
+        let mut log_likelihood = 0.0;
+        for chunk in x.chunks(64) {
+            let mut product = 1.0;
+            for &v in chunk {
+                let mut largest = f64::NEG_INFINITY;
+                for (j, log_density) in log_densities.iter_mut().enumerate() {
+                    *log_density =
+                        c.log_coeff[j] - (v - c.mean[j]) * (v - c.mean[j]) * c.inv_two_var[j];
+                    if log_density.is_nan() {
+                        return f64::NAN;
+                    }
+                    largest = largest.max(*log_density);
+                }
+                log_likelihood += largest;
+                if largest == f64::NEG_INFINITY {
+                    continue;
+                }
+                product *= log_densities
+                    .iter()
+                    .filter(|&&log_density| log_density > largest - SKIP)
+                    .map(|&log_density| (log_density - largest).exp())
+                    .sum::<f64>();
+            }
+            log_likelihood += product.ln();
+        }
+        let p = (3 * ranges.len() - 1) as f64;
+        -2.0 * log_likelihood + p * n.ln()
+    }
 
     /// Return the minimum cost and the first `j` that gives it, with a scalar
     /// search over `jlow..=jhigh`.
@@ -608,5 +726,52 @@ mod tests {
             dispatch!(Level::new(), _simd => min_split(i, jlow, jhigh, &prev, &sumx, &sumxsq));
         assert_eq!(actual.0.to_bits(), expected.0.to_bits());
         assert_eq!(actual.1, expected.1);
+    }
+
+    /// Draw sorted data and a partition of it into contiguous clusters.
+    fn draw_partition(tc: &TestCase) -> (Vec<f64>, Vec<(usize, usize)>) {
+        let len = tc.draw(gs::integers::<usize>().min_value(2).max_value(300));
+        let mut data = tc.draw(
+            gs::vecs(hegel::one_of!(
+                gs::floats::<f64>().min_value(-1e3).max_value(1e3),
+                gs::integers::<u8>().max_value(8).map(f64::from),
+            ))
+            .min_size(len)
+            .max_size(len),
+        );
+        data.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let k = tc.draw(gs::integers::<usize>().min_value(1).max_value(len.min(12)));
+        let mut cuts: Vec<usize> = (1..k)
+            .map(|_| tc.draw(gs::integers::<usize>().min_value(1).max_value(len - 1)))
+            .collect();
+        cuts.sort_unstable();
+        cuts.dedup();
+        let mut ranges = Vec::with_capacity(cuts.len() + 1);
+        let mut left = 0;
+        for &cut in &cuts {
+            ranges.push((left, cut - 1));
+            left = cut;
+        }
+        ranges.push((left, len - 1));
+        (data, ranges)
+    }
+
+    #[hegel::test(test_cases = 2000)]
+    fn compute_bic_agrees_with_reference(tc: TestCase) {
+        let (data, ranges) = draw_partition(&tc);
+        let expected = reference_bic(&data, &ranges);
+        let actual = compute_bic(&data, &ranges);
+        assert_eq!(
+            actual.to_bits(),
+            expected.to_bits(),
+            "compute_bic {actual}, reference {expected}, ranges {ranges:?}"
+        );
+    }
+
+    #[test]
+    fn compute_bic_is_nan_for_infinite_values() {
+        let data = [1.0, 2.0, 3.0, f64::INFINITY];
+        assert!(compute_bic(&data, &[(0, 2), (3, 3)]).is_nan());
+        assert!(reference_bic(&data, &[(0, 2), (3, 3)]).is_nan());
     }
 }
