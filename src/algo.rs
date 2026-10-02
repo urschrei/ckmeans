@@ -1,3 +1,4 @@
+use fearless_simd::{Level, dispatch};
 use num_traits::Float;
 
 use crate::CkNum;
@@ -174,6 +175,7 @@ fn min_split(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline(always)]
 fn fill_matrix_column(
     imin: usize,
     imax: usize,
@@ -277,19 +279,24 @@ pub(crate) fn fill_matrices<T: CkNum>(
     let stack_capacity = ((nvalues as f64).log2().ceil() as usize).max(1) + 1;
     let mut stack = Vec::with_capacity(stack_capacity);
 
-    for k in 1..nclusters {
-        let imin = k.max(1);
-        fill_matrix_column(
-            imin,
-            nvalues - 1,
-            k,
-            matrix,
-            backtrack_matrix,
-            &sumx,
-            &sumxsq,
-            &mut stack,
-        );
-    }
+    // Compile the column loop for each SIMD level, and select the best level
+    // that the CPU supports. The functions that the loop calls are
+    // #[inline(always)], so they also compile for that level.
+    dispatch!(Level::new(), _simd => {
+        for k in 1..nclusters {
+            let imin = k.max(1);
+            fill_matrix_column(
+                imin,
+                nvalues - 1,
+                k,
+                matrix,
+                backtrack_matrix,
+                &sumx,
+                &sumxsq,
+                &mut stack,
+            );
+        }
+    });
     Some(())
 }
 
