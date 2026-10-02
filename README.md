@@ -88,30 +88,33 @@ This implementation builds on David Schnurr's JavaScript package (<https://githu
 | Column filling | Recursive or iterative two-pointer | Stack-based divide-and-conquer with single-pass inner loop |
 | SSQ computation | Computed twice per candidate in two-pointer approach | Computed exactly once per candidate |
 | Memory allocation | Per-column stack allocation | Pre-allocated stack reused across columns |
+| Split-point search | Scalar | Vectorised, with run-time selection of the SIMD instruction set |
 
 The single-pass inner loop is the most significant change: the original two-pointer approach computed `SSQ(j, i)` for both the high and low pointers in each iteration, effectively computing SSQ twice for each index in the search range. This implementation computes SSQ exactly once per index, which significantly benefits f64 performance where floating-point arithmetic dominates.
 
+The search for the split point keeps four independent minima, so that the compiler can vectorise it. On x86-64, the library uses [`fearless_simd`](https://crates.io/crates/fearless_simd) to select AVX2 at run time if the CPU supports it, and SSE2 if not. You do not have to set compiler flags such as `-C target-cpu`. A build with AVX2 as the baseline (`x86-64-v3`) is not measurably faster than the run-time selection. Ranges of fewer than 16 candidates use a scalar loop, because the set-up of the vector loop costs more than it saves. The results are identical to those of a scalar search.
+
 # Performance
 
-On an M2 Pro, to produce 7 clusters from normally-distributed f64 data:
+On an M2 Pro, to produce 7 clusters from f64 data that is uniformly distributed on [0, 1000):
 
 | Data Size | Time |
 |-----------|------|
-| 10,000 | 1.7 ms |
-| 50,000 | 9.9 ms |
-| 110,000 | 23 ms |
-| 500,000 | 115 ms |
-| 1,000,000 | 243 ms |
+| 10,000 | 1.4 ms |
+| 50,000 | 7.8 ms |
+| 110,000 | 18 ms |
+| 500,000 | 88 ms |
+| 1,000,000 | 184 ms |
 
 Scaling with cluster count (110k f64 values):
 
 | Clusters (k) | Time |
 |--------------|------|
-| 3 | 9.6 ms |
-| 7 | 23 ms |
-| 15 | 47 ms |
-| 30 | 89 ms |
-| 50 | 138 ms |
+| 3 | 7.7 ms |
+| 7 | 18 ms |
+| 15 | 38 ms |
+| 30 | 73 ms |
+| 50 | 115 ms |
 
 ## Comparison with the C++ implementation
 
@@ -154,7 +157,6 @@ In addition to the unit tests, [`src/properties.rs`](src/properties.rs) contains
 
 ## Possible Improvements
 
-- **SIMD**: The split-point search is vectorised for ranges of 16 or more candidates. On x86-64, the library selects AVX2 at run time if the CPU supports it; other x86-64 CPUs use SSE2. A build for `x86-64-v3` (AVX2 as the baseline) is not measurably faster than this run-time selection.
 - **Parallelisation**: Columns could be processed in parallel using rayon (though dependencies between columns limit this)
 
 # References
