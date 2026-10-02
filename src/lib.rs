@@ -208,13 +208,19 @@ pub fn ckmeans_optimal<T: CkNum + Float>(
     let mut best_ranges: Vec<(usize, usize)> = Vec::new();
     let mut all_bics: Vec<(u8, T)> = Vec::with_capacity((k_max - k_min + 1) as usize);
 
+    let x: Vec<f64> = sorted
+        .iter()
+        .map(|v| v.to_f64())
+        .collect::<Option<_>>()
+        .ok_or(CkmeansErr::ConversionError)?;
+
     // Fill the matrices once. The first k rows give the clustering for k clusters.
     let backtrack_matrix =
         algo::backtrack_matrix(&sorted, k_max as usize).ok_or(CkmeansErr::ConversionError)?;
 
     for k in k_min..=k_max {
         let ranges = algo::backtrack(&backtrack_matrix, k as usize);
-        let bic = algo::compute_bic(&sorted, &ranges).ok_or(CkmeansErr::ConversionError)?;
+        let bic = T::from_f64(algo::compute_bic(&x, &ranges)).ok_or(CkmeansErr::ConversionError)?;
 
         all_bics.push((k, bic));
 
@@ -730,7 +736,7 @@ mod tests {
         // 3 clusters from 9 data points
         let sorted = [1.0, 2.0, 3.0, 10.0, 20.0, 78.0, 79.0, 81.0, 82.0];
         let bic = algo::compute_bic(&sorted, &[(0, 2), (3, 4), (5, 8)]);
-        assert!(bic.unwrap().is_finite());
+        assert!(bic.is_finite());
     }
 
     #[test]
@@ -739,14 +745,14 @@ mod tests {
         // adjacent values as their variance.
         let sorted = [1.0, 10.0, 10.0, 10.0, 12.0, 15.0];
         let bic = algo::compute_bic(&sorted, &[(0, 0), (1, 3), (4, 5)]);
-        assert!(bic.unwrap().is_finite());
+        assert!(bic.is_finite());
     }
 
     #[test]
     fn test_compute_bic_prefers_true_cluster_count() {
         // Two separated groups: k = 2 has a lower BIC than k = 1 and k = 3.
         let sorted = [1.0, 1.5, 2.0, 2.5, 3.0, 50.0, 50.5, 51.0, 51.5, 52.0];
-        let bic = |ranges: &[(usize, usize)]| algo::compute_bic(&sorted, ranges).unwrap();
+        let bic = |ranges: &[(usize, usize)]| algo::compute_bic(&sorted, ranges);
         let k1 = bic(&[(0, 9)]);
         let k2 = bic(&[(0, 4), (5, 9)]);
         let k3 = bic(&[(0, 4), (5, 6), (7, 9)]);
