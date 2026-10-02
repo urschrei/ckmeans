@@ -600,7 +600,9 @@ mod tests {
         let jlow = tc.draw(gs::integers::<usize>().min_value(1).max_value(i));
         let jhigh = tc.draw(gs::integers::<usize>().min_value(jlow).max_value(i));
         let expected = scalar_min_split(i, jlow, jhigh, &prev, &sumx, &sumxsq);
-        let actual = min_split(i, jlow, jhigh, &prev, &sumx, &sumxsq);
+        // Use the SIMD level that fill_matrices uses.
+        let actual =
+            dispatch!(Level::new(), _simd => min_split(i, jlow, jhigh, &prev, &sumx, &sumxsq));
         assert_eq!(actual.0.to_bits(), expected.0.to_bits());
         assert_eq!(actual.1, expected.1);
     }
