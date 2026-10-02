@@ -9,7 +9,7 @@ documentation = "https://docs.rs/ckmeans"
 readme = "README.md"
 keywords = ["gis", "geo", "spatial", "clustering"]
 autobenches = true
-rust-version = "1.86"
+rust-version = "1.89"
 categories = ["science::geo"]
 
 [badges]
