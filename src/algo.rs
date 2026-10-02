@@ -48,6 +48,11 @@ impl<T: CkNum> FlatMatrix<T> {
     pub(crate) fn set(&mut self, row: usize, col: usize, value: T) {
         self.data[row * self.cols + col] = value;
     }
+
+    #[inline]
+    pub(crate) fn row(&self, row: usize) -> &[T] {
+        &self.data[row * self.cols..(row + 1) * self.cols]
+    }
 }
 
 /// Within-cluster sum of squares for the sorted segment `j..=i`.
@@ -70,6 +75,102 @@ fn ssq(j: usize, i: usize, sumx: &[f64], sumxsq: &[f64]) -> f64 {
         sumxsq[i] - (sumx[i] * sumx[i]) / n_plus_one
     };
     if sji < 0.0 { 0.0 } else { sji }
+}
+
+/// Number of independent minimum searches in the lane loop of [`min_split`].
+const LANES: usize = 4;
+
+/// Below this range length, [`min_split`] uses a scalar loop. The set-up and
+/// reduction of the lane loop cost more than they save on short ranges, and
+/// most ranges in the divide-and-conquer search are short.
+const LANE_THRESHOLD: usize = 16;
+
+/// Return the minimum of `ssq(j, i) + prev[j - 1]` for `j` in `jlow..=jhigh`,
+/// and the first `j` that gives it. `jlow` must be at least 1.
+///
+/// For long ranges, each of [`LANES`] lanes keeps its own minimum, so that the
+/// compiler can vectorise the loop. Each cost uses the same operations as
+/// [`ssq`], so the result is identical to that of a scalar search.
+#[inline(always)]
+fn min_split(
+    i: usize,
+    jlow: usize,
+    jhigh: usize,
+    prev: &[f64],
+    sumx: &[f64],
+    sumxsq: &[f64],
+) -> (f64, usize) {
+    debug_assert!(jlow >= 1 && jlow <= jhigh && jhigh <= i);
+    // Offset m in these slices is j = jlow + m. Because j > 0, the costs use
+    // the j > 0 branch of ssq.
+    let start = jlow - 1;
+    let len = jhigh - jlow + 1;
+    let sx = &sumx[start..start + len];
+    let sq = &sumxsq[start..start + len];
+    let prev = &prev[start..start + len];
+    let (sx_i, sq_i) = (sumx[i], sumxsq[i]);
+    // Segment length at offset 0. Integers below 2^53 are exact in f64, so
+    // n0 - m is equal to (i - j + 1) as f64.
+    let n0 = (i - jlow + 1) as f64;
+    let cost = |sxm: f64, sqm: f64, pm: f64, n: f64| {
+        let muji = (sx_i - sxm) / n;
+        let sji = sq_i - sqm - n * muji * muji;
+        (if sji < 0.0 { 0.0 } else { sji }) + pm
+    };
+
+    if len < LANE_THRESHOLD {
+        let mut best_cost = cost(sx[0], sq[0], prev[0], n0);
+        let mut best_m = 0;
+        for m in 1..len {
+            let c = cost(sx[m], sq[m], prev[m], n0 - m as f64);
+            if c < best_cost {
+                best_cost = c;
+                best_m = m;
+            }
+        }
+        return (best_cost, jlow + best_m);
+    }
+
+    let mut lane_cost = [f64::INFINITY; LANES];
+    let mut lane_m = [usize::MAX; LANES];
+    let chunks = sx
+        .chunks_exact(LANES)
+        .zip(sq.chunks_exact(LANES))
+        .zip(prev.chunks_exact(LANES));
+    for (chunk, ((sxc, sqc), pc)) in chunks.enumerate() {
+        let base = chunk * LANES;
+        for lane in 0..LANES {
+            let c = cost(sxc[lane], sqc[lane], pc[lane], n0 - (base + lane) as f64);
+            let better = c < lane_cost[lane];
+            lane_cost[lane] = if better { c } else { lane_cost[lane] };
+            lane_m[lane] = if better { base + lane } else { lane_m[lane] };
+        }
+    }
+
+    // Each lane holds its first minimum. Of equal minima, keep the smallest
+    // offset.
+    let mut best_cost = f64::INFINITY;
+    let mut best_m = usize::MAX;
+    for lane in 0..LANES {
+        if lane_cost[lane] < best_cost || (lane_cost[lane] == best_cost && lane_m[lane] < best_m) {
+            best_cost = lane_cost[lane];
+            best_m = lane_m[lane];
+        }
+    }
+    for m in (len / LANES) * LANES..len {
+        let c = cost(sx[m], sq[m], prev[m], n0 - m as f64);
+        if c < best_cost {
+            best_cost = c;
+            best_m = m;
+        }
+    }
+    // If no cost is less than infinity, use the first j, as the scalar search
+    // does.
+    if best_m == usize::MAX {
+        best_m = 0;
+        best_cost = cost(sx[0], sq[0], prev[0], n0);
+    }
+    (best_cost, jlow + best_m)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -110,20 +211,7 @@ fn fill_matrix_column(
             jhigh = jhigh.min(backtrack_matrix.get(column, imax + 1));
         }
 
-        // Find minimum cost split point with a single pass through the range.
-        // This computes ssq exactly once per j (the old two-pointer approach
-        // computed ssq twice for each index).
-        let mut best_j = jlow;
-        let mut best_cost = ssq(jlow, i, sumx, sumxsq) + matrix.get(column - 1, jlow - 1);
-
-        for j in (jlow + 1)..=jhigh {
-            let cost = ssq(j, i, sumx, sumxsq) + matrix.get(column - 1, j - 1);
-            if cost < best_cost {
-                best_cost = cost;
-                best_j = j;
-            }
-        }
-
+        let (best_cost, best_j) = min_split(i, jlow, jhigh, matrix.row(column - 1), sumx, sumxsq);
         matrix.set(column, i, best_cost);
         backtrack_matrix.set(column, i, best_j);
 
@@ -440,4 +528,73 @@ pub(crate) fn compute_bic<T: CkNum + Float>(sorted: &[T], ranges: &[(usize, usiz
     // p = 3k - 1: k means, k variances and k - 1 weights
     let p = (3 * ranges.len() - 1) as f64;
     T::from_f64(-2.0 * log_likelihood + p * n.ln())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hegel::TestCase;
+    use hegel::generators::{self as gs, Generator};
+
+    /// Return the minimum cost and the first `j` that gives it, with a scalar
+    /// search over `jlow..=jhigh`.
+    fn scalar_min_split(
+        i: usize,
+        jlow: usize,
+        jhigh: usize,
+        prev: &[f64],
+        sumx: &[f64],
+        sumxsq: &[f64],
+    ) -> (f64, usize) {
+        let mut best_j = jlow;
+        let mut best_cost = ssq(jlow, i, sumx, sumxsq) + prev[jlow - 1];
+        for j in (jlow + 1)..=jhigh {
+            let cost = ssq(j, i, sumx, sumxsq) + prev[j - 1];
+            if cost < best_cost {
+                best_cost = cost;
+                best_j = j;
+            }
+        }
+        (best_cost, best_j)
+    }
+
+    /// Values from a small pool make equal costs frequent, so the test
+    /// examines the tie-break.
+    #[hegel::test(test_cases = 2000)]
+    fn min_split_agrees_with_scalar_search(tc: TestCase) {
+        let len = tc.draw(gs::integers::<usize>().min_value(2).max_value(200));
+        let mut data = tc.draw(
+            gs::vecs(hegel::one_of!(
+                gs::floats::<f64>().min_value(-1.0).max_value(1.0),
+                gs::integers::<u8>().max_value(4).map(f64::from),
+            ))
+            .min_size(len)
+            .max_size(len),
+        );
+        data.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let prev = tc.draw(
+            gs::vecs(hegel::one_of!(
+                gs::floats::<f64>().min_value(0.0).max_value(10.0),
+                gs::integers::<u8>().max_value(2).map(f64::from),
+            ))
+            .min_size(len)
+            .max_size(len),
+        );
+        let mut sumx = Vec::with_capacity(len);
+        let mut sumxsq = Vec::with_capacity(len);
+        let (mut sx, mut sq) = (0.0, 0.0);
+        for &x in &data {
+            sx += x;
+            sq += x * x;
+            sumx.push(sx);
+            sumxsq.push(sq);
+        }
+        let i = tc.draw(gs::integers::<usize>().min_value(1).max_value(len - 1));
+        let jlow = tc.draw(gs::integers::<usize>().min_value(1).max_value(i));
+        let jhigh = tc.draw(gs::integers::<usize>().min_value(jlow).max_value(i));
+        let expected = scalar_min_split(i, jlow, jhigh, &prev, &sumx, &sumxsq);
+        let actual = min_split(i, jlow, jhigh, &prev, &sumx, &sumxsq);
+        assert_eq!(actual.0.to_bits(), expected.0.to_bits());
+        assert_eq!(actual.1, expected.1);
+    }
 }
