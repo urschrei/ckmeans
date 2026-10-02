@@ -154,7 +154,7 @@ In addition to the unit tests, [`src/properties.rs`](src/properties.rs) contains
 
 ## Possible Improvements
 
-- **SIMD**: The SSQ computation could potentially benefit from SIMD vectorisation
+- **SIMD**: The split-point search is vectorised for ranges of 16 or more candidates, with 128-bit vectors on the default targets. On x86-64, 256-bit AVX2 vectors could double the lane width.
 - **Parallelisation**: Columns could be processed in parallel using rayon (though dependencies between columns limit this)
 
 # References
