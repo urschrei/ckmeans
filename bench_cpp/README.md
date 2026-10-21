@@ -80,13 +80,51 @@ with `Kmin = 1` and `Kmax = 9`.
 
 ## Results
 
-Apple M2 Pro, rustc 1.99.0, Apple clang 17.0.0. The times are Criterion point estimates from
-one run of the full suite.
+Apple M2 Pro, rustc 1.99.0, Apple clang 17.0.0. The times are Criterion means from one run of
+the full suite.
+
+The speed-up is the C++ time divided by the Rust time. A speed-up of 2.00× means that the Rust
+call takes half the time of the C++ call. The Rust call is `rust_optimal`, because it does the
+same work as the C++ call, including the BIC value. The 95 percent confidence interval of each
+speed-up is within 4 percent of the value.
+
+### Summary
+
+The geometric mean of the speed-up over the 12 cases below:
+
+| Baseline | Geometric mean | Smallest | Largest |
+|----------|----------------|----------|---------|
+| `cpp_linear`, the R and Python default | 1.92× | 1.78× | 2.13× |
+| `cpp_loglinear` | 1.77× | 1.61× | 1.96× |
+
+`rust_indices`, which `ckmeans_py` calls, does not compute the BIC value. It is 5 to 19 percent
+faster than `rust_optimal`. Against `cpp_linear`, its geometric mean speed-up over the 10
+fixed-k cases is 2.08×.
+
+### Speed-up for each case
+
+| Input | n | k | `rust_optimal` | `cpp_linear` | Speed-up | `cpp_loglinear` | Speed-up |
+|-------|---|---|----------------|--------------|----------|-----------------|----------|
+| Uniform(1, 3) | 110,000 | 5 | 14.5 ms | 26.0 ms | 1.79× | 25.3 ms | 1.74× |
+| Uniform(1, 3) | 110,000 | 20 | 52.7 ms | 105.3 ms | 2.00× | 90.7 ms | 1.72× |
+| Uniform(1, 3) | 1,000,000 | 5 | 142.9 ms | 254.9 ms | 1.78× | 249.8 ms | 1.75× |
+| Uniform(1, 3) | 1,000,000 | 20 | 556.1 ms | 995.4 ms | 1.79× | 940.5 ms | 1.69× |
+| Uniform(0, 1000) | 110,000 | 3 | 9.1 ms | 16.5 ms | 1.82× | 16.1 ms | 1.77× |
+| Uniform(0, 1000) | 110,000 | 7 | 20.0 ms | 37.0 ms | 1.85× | 36.2 ms | 1.81× |
+| Uniform(0, 1000) | 110,000 | 15 | 40.4 ms | 81.2 ms | 2.01× | 72.2 ms | 1.78× |
+| Uniform(0, 1000) | 110,000 | 30 | 75.5 ms | 160.5 ms | 2.13× | 141.6 ms | 1.88× |
+| Uniform(0, 1000) | 110,000 | 50 | 120.0 ms | 256.0 ms | 2.13× | 193.0 ms | 1.61× |
+| Bimodal | 110,000 | 7 | 17.6 ms | 31.3 ms | 1.78× | 28.7 ms | 1.63× |
+| Four normals | 110,000 | BIC, 1..=9 | 26.7 ms | 54.5 ms | 2.04× | 50.9 ms | 1.90× |
+| Four normals | 1,000,000 | BIC, 1..=9 | 263.1 ms | 510.2 ms | 1.94× | 515.9 ms | 1.96× |
+
+<details>
+<summary>All measured times</summary>
 
 Uniform(1, 3), the `ckmeans_py` cases:
 
 | n | k | `rust_indices` | `rust_clusters` | `rust_optimal` | `cpp_linear` | `cpp_loglinear` |
-|---|---|--------------|---------------|--------------|------------|---------------|
+|---|---|----------------|-----------------|----------------|--------------|-----------------|
 | 110,000 | 5 | 13.2 ms | 12.9 ms | 14.5 ms | 26.0 ms | 25.3 ms |
 | 110,000 | 20 | 49.7 ms | 49.8 ms | 52.7 ms | 105.3 ms | 90.7 ms |
 | 1,000,000 | 5 | 126.7 ms | 128.0 ms | 142.9 ms | 254.9 ms | 249.8 ms |
@@ -95,7 +133,7 @@ Uniform(1, 3), the `ckmeans_py` cases:
 Uniform(0, 1000), n = 110,000:
 
 | k | `rust_indices` | `rust_clusters` | `rust_optimal` | `cpp_linear` | `cpp_loglinear` |
-|---|--------------|---------------|--------------|------------|---------------|
+|---|----------------|-----------------|----------------|--------------|-----------------|
 | 3 | 7.6 ms | 7.8 ms | 9.1 ms | 16.5 ms | 16.1 ms |
 | 7 | 18.2 ms | 17.9 ms | 20.0 ms | 37.0 ms | 36.2 ms |
 | 15 | 38.2 ms | 37.3 ms | 40.4 ms | 81.2 ms | 72.2 ms |
@@ -105,15 +143,10 @@ Uniform(0, 1000), n = 110,000:
 Bimodal, n = 110,000:
 
 | k | `rust_indices` | `rust_clusters` | `rust_optimal` | `cpp_linear` | `cpp_loglinear` |
-|---|--------------|---------------|--------------|------------|---------------|
+|---|----------------|-----------------|----------------|--------------|-----------------|
 | 7 | 16.0 ms | 15.9 ms | 17.6 ms | 31.3 ms | 28.7 ms |
 
-BIC selection of k in 1..=9:
-
-| n | `rust_optimal` | `cpp_linear` | `cpp_loglinear` |
-|---|----------------|--------------|-----------------|
-| 110,000 | 26.7 ms | 54.5 ms | 50.9 ms |
-| 1,000,000 | 263.1 ms | 510.2 ms | 515.9 ms |
+</details>
 
 ## Licence
 
