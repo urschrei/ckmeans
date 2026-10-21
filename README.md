@@ -120,9 +120,10 @@ Scaling with cluster count (110k f64 values):
 
 The `bench_cpp` crate compares this library with the C++ implementation of the
 [Ckmeans.1d.dp](https://cran.r-project.org/package=Ckmeans.1d.dp) R package on the same inputs.
-On an Apple M2 Pro, `ckmeans_optimal` is 1.78 to 2.13 times as fast as the default C++ method
-(geometric mean 1.92) and 1.61 to 1.96 times as fast as its `loglinear` method (geometric mean
-1.77). See [`bench_cpp/README.md`](bench_cpp/README.md).
+On an Apple M2 Pro, for a fixed k, `ckmeans_indices` is 1.94 to 2.25 times as fast as the
+default C++ method (geometric mean 2.08). For selection of k with the BIC, `ckmeans_optimal` is
+1.94 to 2.04 times as fast (geometric mean 1.99). See [`bench_cpp/README.md`](bench_cpp/README.md)
+for the results against the `loglinear` C++ method.
 
 ## Profile-Guided Optimisation (PGO)
 This library supports PGO builds for enhanced performance. PGO typically provides 10-30% performance improvements by optimising hot paths based on real-world usage patterns.

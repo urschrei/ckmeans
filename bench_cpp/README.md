@@ -36,9 +36,9 @@ Each benchmark runs these functions on the same seeded input:
 
 | ID | Call |
 |----|------|
-| `rust_indices` | `ckmeans::ckmeans_indices`, which `ckmeans_py` calls |
+| `rust_indices` | `ckmeans::ckmeans_indices`, which the `ckmeans()` function of `ckmeans_py` calls |
 | `rust_clusters` | `ckmeans::ckmeans` |
-| `rust_optimal` | `ckmeans::ckmeans_optimal` with `k_min = k_max = k` |
+| `rust_optimal` | `ckmeans::ckmeans_optimal`, which the `ckmeans_optimal()` function of `ckmeans_py` calls. The fixed-k groups use `k_min = k_max = k` |
 | `cpp_linear` | `kmeans_1d_dp()` with method `linear`, the default in the R and Python packages |
 | `cpp_loglinear` | `kmeans_1d_dp()` with method `loglinear` |
 
@@ -84,39 +84,48 @@ Apple M2 Pro, rustc 1.99.0, Apple clang 17.0.0. The times are Criterion means fr
 the full suite.
 
 The speed-up is the C++ time divided by the Rust time. A speed-up of 2.00× means that the Rust
-call takes half the time of the C++ call. The Rust call is `rust_optimal`, because it does the
-same work as the C++ call, including the BIC value. The 95 percent confidence interval of each
-speed-up is within 4 percent of the value.
+call takes half the time of the C++ call. The 95 percent confidence interval of each speed-up is
+within 4 percent of the value.
 
 ### Summary
 
-The geometric mean of the speed-up over the 12 cases below:
+The geometric mean of the speed-up for each task:
 
-| Baseline | Geometric mean | Smallest | Largest |
-|----------|----------------|----------|---------|
-| `cpp_linear`, the R and Python default | 1.92× | 1.78× | 2.13× |
-| `cpp_loglinear` | 1.77× | 1.61× | 1.96× |
+| Task | Rust call | Baseline | Geometric mean | Smallest | Largest |
+|------|-----------|----------|----------------|----------|---------|
+| Fixed k, 10 cases | `rust_indices` | `cpp_linear`, the R and Python default | 2.08× | 1.94× | 2.25× |
+| Fixed k, 10 cases | `rust_indices` | `cpp_loglinear` | 1.90× | 1.69× | 2.10× |
+| BIC selection, 2 cases | `rust_optimal` | `cpp_linear`, the R and Python default | 1.99× | 1.94× | 2.04× |
+| BIC selection, 2 cases | `rust_optimal` | `cpp_loglinear` | 1.93× | 1.90× | 1.96× |
 
-`rust_indices`, which `ckmeans_py` calls, does not compute the BIC value. It is 5 to 19 percent
-faster than `rust_optimal`. Against `cpp_linear`, its geometric mean speed-up over the 10
-fixed-k cases is 2.08×.
+For a fixed k, the C++ call also computes one BIC value, and `rust_indices` does not. See
+[Differences between the two calls](#differences-between-the-two-calls). `rust_optimal` with
+`k_min = k_max = k` does the same work as the C++ call. For the fixed-k cases, its geometric mean
+speed-up is 1.90× against `cpp_linear` and 1.74× against `cpp_loglinear`.
 
-### Speed-up for each case
+### Fixed k
 
-| Input | n | k | `rust_optimal` | `cpp_linear` | Speed-up | `cpp_loglinear` | Speed-up |
+| Input | n | k | `rust_indices` | `cpp_linear` | Speed-up | `cpp_loglinear` | Speed-up |
 |-------|---|---|----------------|--------------|----------|-----------------|----------|
-| Uniform(1, 3) | 110,000 | 5 | 14.5 ms | 26.0 ms | 1.79× | 25.3 ms | 1.74× |
-| Uniform(1, 3) | 110,000 | 20 | 52.7 ms | 105.3 ms | 2.00× | 90.7 ms | 1.72× |
-| Uniform(1, 3) | 1,000,000 | 5 | 142.9 ms | 254.9 ms | 1.78× | 249.8 ms | 1.75× |
-| Uniform(1, 3) | 1,000,000 | 20 | 556.1 ms | 995.4 ms | 1.79× | 940.5 ms | 1.69× |
-| Uniform(0, 1000) | 110,000 | 3 | 9.1 ms | 16.5 ms | 1.82× | 16.1 ms | 1.77× |
-| Uniform(0, 1000) | 110,000 | 7 | 20.0 ms | 37.0 ms | 1.85× | 36.2 ms | 1.81× |
-| Uniform(0, 1000) | 110,000 | 15 | 40.4 ms | 81.2 ms | 2.01× | 72.2 ms | 1.78× |
-| Uniform(0, 1000) | 110,000 | 30 | 75.5 ms | 160.5 ms | 2.13× | 141.6 ms | 1.88× |
-| Uniform(0, 1000) | 110,000 | 50 | 120.0 ms | 256.0 ms | 2.13× | 193.0 ms | 1.61× |
-| Bimodal | 110,000 | 7 | 17.6 ms | 31.3 ms | 1.78× | 28.7 ms | 1.63× |
-| Four normals | 110,000 | BIC, 1..=9 | 26.7 ms | 54.5 ms | 2.04× | 50.9 ms | 1.90× |
-| Four normals | 1,000,000 | BIC, 1..=9 | 263.1 ms | 510.2 ms | 1.94× | 515.9 ms | 1.96× |
+| Uniform(1, 3) | 110,000 | 5 | 13.2 ms | 26.0 ms | 1.97× | 25.3 ms | 1.92× |
+| Uniform(1, 3) | 110,000 | 20 | 49.7 ms | 105.3 ms | 2.12× | 90.7 ms | 1.82× |
+| Uniform(1, 3) | 1,000,000 | 5 | 126.7 ms | 254.9 ms | 2.01× | 249.8 ms | 1.97× |
+| Uniform(1, 3) | 1,000,000 | 20 | 513.5 ms | 995.4 ms | 1.94× | 940.5 ms | 1.83× |
+| Uniform(0, 1000) | 110,000 | 3 | 7.6 ms | 16.5 ms | 2.16× | 16.1 ms | 2.10× |
+| Uniform(0, 1000) | 110,000 | 7 | 18.2 ms | 37.0 ms | 2.03× | 36.2 ms | 1.99× |
+| Uniform(0, 1000) | 110,000 | 15 | 38.2 ms | 81.2 ms | 2.13× | 72.2 ms | 1.89× |
+| Uniform(0, 1000) | 110,000 | 30 | 71.4 ms | 160.5 ms | 2.25× | 141.6 ms | 1.98× |
+| Uniform(0, 1000) | 110,000 | 50 | 114.4 ms | 256.0 ms | 2.24× | 193.0 ms | 1.69× |
+| Bimodal | 110,000 | 7 | 16.0 ms | 31.3 ms | 1.96× | 28.7 ms | 1.79× |
+
+### BIC selection of k in 1..=9
+
+Four normals, means 0, 10, 20, 30:
+
+| n | `rust_optimal` | `cpp_linear` | Speed-up | `cpp_loglinear` | Speed-up |
+|---|----------------|--------------|----------|-----------------|----------|
+| 110,000 | 26.7 ms | 54.5 ms | 2.04× | 50.9 ms | 1.90× |
+| 1,000,000 | 263.1 ms | 510.2 ms | 1.94× | 515.9 ms | 1.96× |
 
 <details>
 <summary>All measured times</summary>
@@ -127,7 +136,7 @@ Uniform(1, 3), the `ckmeans_py` cases:
 |---|---|----------------|-----------------|----------------|--------------|-----------------|
 | 110,000 | 5 | 13.2 ms | 12.9 ms | 14.5 ms | 26.0 ms | 25.3 ms |
 | 110,000 | 20 | 49.7 ms | 49.8 ms | 52.7 ms | 105.3 ms | 90.7 ms |
-| 1,000,000 | 5 | 126.7 ms | 128.0 ms | 142.9 ms | 254.9 ms | 249.8 ms |
+| 1,000,000 | 5 | 126.7 ms | 128.0 ms | 143.0 ms | 254.9 ms | 249.8 ms |
 | 1,000,000 | 20 | 513.5 ms | 521.5 ms | 556.1 ms | 995.4 ms | 940.5 ms |
 
 Uniform(0, 1000), n = 110,000:
