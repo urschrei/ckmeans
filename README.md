@@ -2,6 +2,8 @@
 
 [![Documentation](https://img.shields.io/docsrs/ckmeans/latest.svg)](https://docs.rs/ckmeans/latest)
 
+Ckmeans clustering is an improvement on 1-dimensional (univariate) heuristic-based clustering approaches such as Jenks (natural breaks). The algorithm was developed by Haizhou Wang and Mingzhou Song (2011) as a dynamic programming approach to the problem of clustering numeric data into groups with the least within-group sum-of-squared-deviations.
+
 
 ```rust
 use ckmeans::ckmeans;
@@ -23,6 +25,8 @@ let result = ckmeans(&input, 3).unwrap();
 assert_eq!(result, expected);
 ```
 
+Minimising the difference within groups (what Wang & Song refer to as `withinss`, or within sum-of-squares) means that groups are optimally homogeneous within and the data is split into representative groups. This is very useful for visualisation, where one may wish to represent a continuous variable in discrete colour or style groups. This function can provide groups that emphasise differences between data.
+
 ## Optimal k Selection
 
 If you don't know the optimal number of clusters in advance, `ckmeans_optimal` can determine it
@@ -43,10 +47,6 @@ let result = ckmeans_optimal(&data, CkmeansConfig::default()).unwrap();
 // result.stats contains per-cluster centre, size, and within-cluster sum of squares
 // result.bic contains BIC values for each candidate k
 ```
-
-Ckmeans clustering is an improvement on 1-dimensional (univariate) heuristic-based clustering approaches such as [Jenks](https://en.wikipedia.org/wiki/Jenks_natural_breaks_optimization). The algorithm was developed by [Haizhou Wang and Mingzhou Song](http://journal.r-project.org/archive/2011-2/RJournal_2011-2_Wang+Song.pdf) (2011) as a [dynamic programming](https://en.wikipedia.org/wiki/Dynamic_programming) approach to the problem of clustering numeric data into groups with the least within-group sum-of-squared-deviations.
-
-Minimising the difference within groups (what Wang & Song refer to as `withinss`, or within sum-of-squares) means that groups are optimally homogeneous within and the data is split into representative groups. This is very useful for visualisation, where one may wish to represent a continuous variable in discrete colour or style groups. This function can provide groups that emphasise differences between data.
 
 ## Data Types
 
