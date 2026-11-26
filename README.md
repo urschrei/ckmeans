@@ -80,6 +80,8 @@ A WASM module gives access to `ckmeans`, `roundbreaks` and `ckmeans_optimal`. It
 
 To build the package in `pkg/` and test it with Node.js, run `scripts/build-npm.sh`. The script requires [`wasm-pack`](https://github.com/drager/wasm-pack) and Node.js, and compiles the module with WebAssembly SIMD (`simd128`) enabled.
 
+To compare the package in `pkg/` with two JavaScript implementations, run `npm install` and `npm run bench` in `npm/bench`.
+
 # Implementation
 
 This implementation builds on David Schnurr's JavaScript package (<https://github.com/schnerd/ckmeans>) and Bill Mill's Python + Numpy implementation (<https://github.com/llimllib/ckmeans>), with several key differences:

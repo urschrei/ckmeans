@@ -1,0 +1,13 @@
+{
+  "name": "ckmeans-wasm-bench",
+  "private": true,
+  "type": "module",
+  "description": "Compare the ckmeans WASM build with JavaScript implementations",
+  "scripts": {
+    "bench": "node compare.mjs ../../pkg"
+  },
+  "devDependencies": {
+    "ckmeans": "^2.1.0",
+    "simple-statistics": "^8.0.0"
+  }
+}

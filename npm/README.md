@@ -95,6 +95,20 @@ const result = ckmeans_optimal_wasm([1, 1, 1, 50, 50, 50, 100, 100, 100]);
 
 `bic` contains the BIC value for each value of k that the function evaluated. `stats` contains the centre, size and within-cluster sum of squares of each cluster.
 
+## Performance
+
+Mean time in milliseconds to divide data into 7 clusters, in Node.js 24 on an Apple M2 Pro. The data is a mixture of five normal distributions. The other columns show [simple-statistics](https://www.npmjs.com/package/simple-statistics) 8.0.0 and [ckmeans](https://www.npmjs.com/package/ckmeans) 2.1.0, which return the same clusters.
+
+| Values | `@urschrei/ckmeans` | simple-statistics | ckmeans |
+|---:|---:|---:|---:|
+| 1,000 | 0.10 | 0.40 | 0.39 |
+| 10,000 | 1.3 | 4.9 | 4.8 |
+| 110,000 | 15 | 66 | 65 |
+| 1,000,000 | 142 | 713 | 702 |
+| 10,000,000 | 1,570 | 8,913 | 8,498 |
+
+The first call with 10,000,000 values takes approximately 3.7 seconds, because the module increases its memory to approximately 1.1 GB.
+
 ## Limits
 
 The [crate README](https://github.com/urschrei/ckmeans#numerical-limits) describes the results for infinite values, very large ranges and large integers.
