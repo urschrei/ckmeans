@@ -76,7 +76,9 @@ Like the [original R implementation](https://cran.r-project.org/web/packages/Ckm
 A C-compatible FFI implementation is available, along with libraries for major platforms. See the [header file](include/header.h) and a basic C example in the [`examples`](examples) folder. The FFI functions have been verified not to leak memory (see comment in example). `ckmeans_ffi` reports errors (such as NaN input or an invalid number of classes) through a `CkmeansStatus` out-parameter and returns a result with a `NULL` data pointer; it does not abort the calling process.
 
 # WASM
-A WASM module is also available, giving access to both `ckmeans` and `roundbreaks`. Generate the module using [`wasm-bindgen`](https://rustwasm.github.io/docs/wasm-bindgen/) and the appropriate target, or use the [NPM package](https://www.npmjs.com/package/@urschrei/ckmeans).
+A WASM module gives access to `ckmeans`, `roundbreaks` and `ckmeans_optimal`. It is available as the [npm package](https://www.npmjs.com/package/@urschrei/ckmeans) `@urschrei/ckmeans`, which has the same version number as the crate. [`npm/README.md`](npm/README.md) describes its use.
+
+To build the package in `pkg/` and test it with Node.js, run `scripts/build-npm.sh`. The script requires [`wasm-pack`](https://github.com/drager/wasm-pack) and Node.js, and compiles the module with WebAssembly SIMD (`simd128`) enabled.
 
 # Implementation
 
